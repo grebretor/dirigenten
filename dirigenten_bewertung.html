@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<!--
+  ══════════════════════════════════════════════════════════════════════════
+  DIRIGENTEN-BEWERTUNG – RIAS Kammerchor Berlin
+  Fragebogen zur Bewertung von Gastdirigenten/Einstudierern, online.
+  Einzelbewertungen werden bewusst OHNE Personenbezug gespeichert (siehe
+  Tabelle d_bewertungen: keine mitglied_id-Spalte). Nur "wer hat schon
+  bewertet" wird festgehalten (d_hat_bewertet), um Mehrfachbewertungen
+  zu verhindern.
+
+  SUPABASE-SETUP: siehe Migration "dirigenten_bewertung_schema" und
+  "dirigenten_bewertung_auswertung_rpc" im Projekt (bereits angelegt).
+  ══════════════════════════════════════════════════════════════════════════
+-->
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dirigenten-Bewertung – RIAS Kammerchor Berlin</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --ink:    #1b1f24;
+      --paper:  #f4f3f1;
+      --card:   #ffffff;
+      --blue:   #646870;
+      --blue2:  #4a4d54;
+      --gold:   #a07830;
+      --muted:  #767a82;
+      --border: #dcdad6;
+      --ja:     #2a5840;
+      --ja-bg:  #e8f2ec;
+      --nein:   #7c1f1f;
+      --nein-bg:#fce8e8;
+      --s-bg: #fce8e8; --s-col: #8b1c1c;
+      --a-bg: #e8f2ec; --a-col: #1a5230;
+      --t-bg: #e8eaf4; --t-col: #2a3480;
+      --b-bg: #f5efe2; --b-col: #6b4010;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Source Sans 3', sans-serif; background: var(--paper); color: var(--ink); min-height: 100vh; }
+
+    header { background: var(--blue); color: white; padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; border-bottom: 3px solid var(--gold); box-shadow: 0 2px 12px rgba(0,0,0,0.15); }
+    header .logo { font-family: 'Playfair Display', serif; font-size: 1rem; letter-spacing: 0.04em; line-height: 1.3; }
+    header .logo span { display: block; font-size: 0.68rem; font-family: 'Source Sans 3', sans-serif; font-weight: 300; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.75; }
+    header .role-badge { margin-left: auto; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; background: rgba(255,255,255,0.15); padding: 0.25rem 0.75rem; border-radius: 3px; opacity: 0; transition: opacity 0.3s; }
+    header .role-badge.visible { opacity: 1; }
+
+    .container { max-width: 760px; margin: 1.5rem auto; padding: 0 1.25rem; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem; margin-bottom: 1.25rem; box-shadow: 0 1px 6px rgba(0,0,0,0.05); }
+    .card-title { font-family: 'Playfair Display', serif; font-size: 1.1rem; color: var(--blue); margin-bottom: 1.1rem; padding-bottom: 0.65rem; border-bottom: 1px solid var(--border); }
+
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    .btn { padding: 0.6rem 1.3rem; border: none; border-radius: 4px; cursor: pointer; font-family: 'Source Sans 3', sans-serif; font-size: 0.92rem; font-weight: 600; letter-spacing: 0.03em; transition: background 0.15s, opacity 0.15s; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--blue); color: white; }
+    .btn-primary:not(:disabled):hover { background: var(--blue2); }
+    .btn-outline { background: transparent; color: var(--blue); border: 1.5px solid var(--blue); }
+    .btn-outline:hover { background: #eef3fa; }
+    .btn-ghost { background: var(--paper); color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: #ede9e0; }
+    .btn-danger { background: #7c1f1f; color: white; }
+    .btn-danger:hover { background: #9c2525; }
+    .btn-sm { padding: 0.3rem 0.75rem; font-size: 0.8rem; }
+    .btn-row { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-top: 1.1rem; flex-wrap: wrap; }
+    .btn-row .right { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.3rem; }
+    .form-row { display: flex; gap: 0.75rem; }
+    .form-row .form-group { flex: 1; }
+    input[type="text"], input[type="password"], select, textarea { width: 100%; padding: 0.6rem 0.85rem; border: 1px solid var(--border); border-radius: 4px; font-family: 'Source Sans 3', sans-serif; font-size: 0.95rem; background: white; color: var(--ink); transition: border-color 0.15s; }
+    textarea { resize: vertical; min-height: 5rem; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--blue); }
+
+    .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 3px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; }
+    .badge-S { background: var(--s-bg); color: var(--s-col); }
+    .badge-A { background: var(--a-bg); color: var(--a-col); }
+    .badge-T { background: var(--t-bg); color: var(--t-col); }
+    .badge-B { background: var(--b-bg); color: var(--b-col); }
+    .badge-offen { background: #fff8e6; color: #7c5800; }
+    .badge-geschlossen { background: #ededee; color: #3a3d45; }
+
+    .alert { padding: 0.7rem 1rem; border-radius: 4px; font-size: 0.88rem; margin-bottom: 1rem; line-height: 1.5; }
+    .alert-info  { background: #ededee; color: #3a3d45; border-left: 3px solid var(--blue); }
+    .alert-ok    { background: #e8f2ec; color: #1a5230; border-left: 3px solid var(--ja); }
+    .alert-warn  { background: #fff8e6; color: #7c5800; border-left: 3px solid var(--gold); }
+    .alert-error { background: #fce8e8; color: #8b1a1a; border-left: 3px solid var(--nein); }
+
+    .start-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.5rem; }
+    .start-card { background: white; border: 1.5px solid var(--border); border-radius: 8px; padding: 1.75rem 1.25rem; text-align: center; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+    .start-card:hover { border-color: var(--blue); box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+    .start-card .icon { font-size: 2rem; margin-bottom: 0.75rem; }
+    .start-card h3 { font-family: 'Playfair Display', serif; font-size: 1rem; color: var(--blue); margin-bottom: 0.4rem; }
+    .start-card p { font-size: 0.82rem; color: var(--muted); line-height: 1.4; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    thead th { background: var(--blue); color: white; padding: 0.5rem 0.8rem; text-align: left; font-weight: 600; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; }
+    tbody td { padding: 0.55rem 0.8rem; border-bottom: 1px solid #f0ece3; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #faf8f3; }
+    tbody tr.clickable { cursor: pointer; }
+    td.center { text-align: center; }
+    .tw { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    .vote-buttons-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin: 0.5rem 0 0.25rem; }
+    .vote-big { padding: 1.1rem 0.75rem; border-radius: 8px; font-size: 0.92rem; font-weight: 600; cursor: pointer; border: 2px solid transparent; transition: all 0.15s; text-align: center; line-height: 1.35; background: #ededee; color: var(--ink); }
+    .vote-big:hover { filter: brightness(0.97); }
+    .vote-big.selected { background: var(--blue); color: white; box-shadow: 0 2px 12px rgba(0,0,0,0.18); }
+
+    .likert-row { padding: 0.9rem 0; border-bottom: 1px solid #f0ece3; }
+    .likert-row:last-child { border-bottom: none; }
+    .likert-text { font-size: 0.92rem; margin-bottom: 0.55rem; line-height: 1.4; }
+    .likert-scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.4rem; }
+    .likert-btn { padding: 0.55rem 0.3rem; text-align: center; border-radius: 5px; border: 1.5px solid var(--border); background: white; cursor: pointer; font-size: 0.85rem; font-weight: 700; color: var(--muted); transition: all 0.12s; }
+    .likert-btn:hover { border-color: var(--blue); }
+    .likert-btn.selected { color: white; border-color: transparent; }
+    .likert-btn.selected[data-v="1"] { background: #2a6e3f; }
+    .likert-btn.selected[data-v="2"] { background: #6a9c56; }
+    .likert-btn.selected[data-v="3"] { background: #b8860b; }
+    .likert-btn.selected[data-v="4"] { background: #c06a2f; }
+    .likert-btn.selected[data-v="5"] { background: #9c2020; }
+    .likert-hint { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--muted); margin-top: 0.3rem; }
+    .likert-abstain { text-align: right; margin-top: 0.3rem; }
+    .likert-abstain button { background: none; border: none; color: var(--muted); font-size: 0.72rem; text-decoration: underline; cursor: pointer; padding: 0; }
+
+    .section-label { font-family: 'Playfair Display', serif; font-size: 1rem; color: var(--blue); margin: 1.4rem 0 0.4rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
+    .section-hint { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.5rem; }
+
+    .runde-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.8rem 1rem; border: 1.5px solid var(--border); border-radius: 6px; margin-bottom: 0.6rem; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+    .runde-item:hover { border-color: var(--blue); box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+    .runde-item .ri-name { font-weight: 600; flex: 1; }
+    .runde-item .ri-sub { font-size: 0.8rem; color: var(--muted); }
+
+    .chart-row { margin-bottom: 0.7rem; }
+    .chart-label { display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 0.25rem; }
+    .chart-bar-bg { background: #e8e6e1; border-radius: 4px; height: 22px; overflow: hidden; }
+    .chart-bar { height: 100%; border-radius: 4px; background: var(--blue); transition: width 0.5s ease; }
+
+    .warten-wrap { text-align: center; padding: 2.5rem 1rem; }
+    .warten-wrap .icon { font-size: 3rem; margin-bottom: 1rem; }
+    .warten-wrap h2 { font-family: 'Playfair Display', serif; font-size: 1.3rem; color: var(--blue); margin-bottom: 0.5rem; }
+    .warten-wrap p { font-size: 0.9rem; color: var(--muted); }
+
+    @media (max-width: 480px) {
+      header { padding: 0.8rem 1rem; }
+      .container { padding: 0 0.75rem; margin: 0.75rem auto; }
+      .card { padding: 1rem; }
+      .start-grid { grid-template-columns: 1fr; }
+      .form-row { flex-direction: column; }
+      .vote-buttons-3 { grid-template-columns: 1fr; }
+      .likert-scale { grid-template-columns: repeat(5, 1fr); gap: 0.25rem; }
+      .likert-btn { padding: 0.5rem 0.1rem; font-size: 0.8rem; }
+      .btn-row { flex-wrap: wrap; }
+      .btn-row .btn, .btn-row .right .btn { width: 100%; }
+      input[type="text"], input[type="password"], select { font-size: 1rem; padding: 0.75rem; }
+    }
+
+    @media print {
+      header, .btn-row, .no-print { display: none !important; }
+      .card { box-shadow: none; }
+      body { background: white; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <img src="logo_rkc.png" alt="RIAS Kammerchor Berlin" style="height:2.8rem;width:auto;flex-shrink:0;">
+  <div class="logo">
+    RIAS Kammerchor Berlin
+    <span>Dirigenten-Bewertung</span>
+  </div>
+  <div class="role-badge" id="roleBadge"></div>
+</header>
+
+<div class="container">
+
+  <!-- ══ START ══════════════════════════════════════════════════════════ -->
+  <div class="screen active" id="s-start">
+    <div class="card">
+      <div class="card-title">Willkommen</div>
+      <div class="alert alert-info" id="startAlert" style="display:none"></div>
+      <div class="start-grid">
+        <div class="start-card" onclick="goAdminLogin()">
+          <div class="icon">🎼</div>
+          <h3>Leitung / Vorstand</h3>
+          <p>Dirigenten &amp; Bewertungsrunden verwalten, Ranking ansehen</p>
+        </div>
+        <div class="start-card" onclick="goMemberStart()">
+          <div class="icon">🎵</div>
+          <h3>Mitglied</h3>
+          <p>Einen Dirigenten bewerten</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ ADMIN: LOGIN ════════════════════════════════════════════════════ -->
+  <div class="screen" id="s-admin-login">
+    <div class="card">
+      <div class="card-title">Leitung – Anmeldung</div>
+      <div class="form-group">
+        <label>Passwort</label>
+        <input type="password" id="adminPass" placeholder="Passwort eingeben">
+      </div>
+      <div class="alert alert-error" id="loginError" style="display:none">Falsches Passwort.</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="showScreen('s-start')">← Zurück</button>
+      <button class="btn btn-primary" onclick="checkLogin()">Anmelden →</button>
+    </div>
+  </div>
+
+  <!-- ══ ADMIN: ÜBERSICHT / RANKING ═════════════════════════════════════ -->
+  <div class="screen" id="s-admin-home">
+    <div class="card">
+      <div class="card-title">Ranking</div>
+      <p style="font-size:0.82rem;color:var(--muted);margin-bottom:1rem">
+        Durchschnittswerte über alle Bewertungsrunden. 1 = trifft sehr zu / sehr gut … 5 = trifft gar nicht zu / inakzeptabel.
+        Einzelbewertungen sind grundsätzlich nicht einsehbar, auch nicht hier.
+      </p>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Dirigent</th><th class="center">Ø Kernfragen</th><th class="center">Ø Eignung</th>
+          <th class="center">Ø Gesamtnote</th><th class="center">Wieder arbeiten?</th><th class="center">n</th>
+        </tr></thead>
+        <tbody id="rankingBody"></tbody>
+      </table></div>
+      <div class="alert alert-info" id="rankingEmpty" style="display:none;margin-top:1rem">Noch keine Dirigenten angelegt.</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="resetAll();showScreen('s-start')">⌂ Startseite</button>
+      <div class="right">
+        <button class="btn btn-outline" onclick="csvRanking()">📥 CSV (Ranking)</button>
+        <button class="btn btn-primary" onclick="showScreen('s-admin-neu-dirigent')">+ Neuer Dirigent</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ ADMIN: NEUER DIRIGENT ═══════════════════════════════════════════ -->
+  <div class="screen" id="s-admin-neu-dirigent">
+    <div class="card">
+      <div class="card-title">Neuen Dirigenten anlegen</div>
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="neuDirigentName" placeholder="Vorname Nachname">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="showScreen('s-admin-home')">← Zurück</button>
+      <button class="btn btn-primary" onclick="dirigentAnlegen()">Anlegen →</button>
+    </div>
+  </div>
+
+  <!-- ══ ADMIN: DIRIGENT-DETAIL ══════════════════════════════════════════ -->
+  <div class="screen" id="s-admin-detail">
+    <div class="card">
+      <div class="card-title" id="detailTitel">Dirigent</div>
+      <div id="detailStats"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Bewertungsrunden</div>
+      <div id="rundenListe"></div>
+      <div class="form-row" style="margin-top:1rem;align-items:flex-end">
+        <div class="form-group" style="flex:2">
+          <label>Werk / Programm</label>
+          <input type="text" id="neuRundeWerk" placeholder="z. B. Brahms-Requiem">
+        </div>
+        <div class="form-group">
+          <label>Arbeitsperiode</label>
+          <input type="text" id="neuRundeZeit" placeholder="z. B. Herbst 2026">
+        </div>
+        <div class="form-group" style="flex:0 0 auto">
+          <button class="btn btn-primary" onclick="runde_anlegen()">+ Neue Runde</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">a) Bewertungen – Durchschnitte</div>
+      <div id="detailFragenA"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">b) Eignung – Durchschnitte</div>
+      <div id="detailFragenB"></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="showScreen('s-admin-home');ladeRanking()">← Zum Ranking</button>
+      <button class="btn btn-outline" onclick="csvDetail()">📥 CSV (dieser Dirigent)</button>
+    </div>
+  </div>
+
+  <!-- ══ MITGLIED: NAME & PIN ═══════════════════════════════════════════ -->
+  <div class="screen" id="s-member-name">
+    <div class="card">
+      <div class="card-title">Wer bist du?</div>
+      <div class="form-group">
+        <label>Name auswählen</label>
+        <select id="memberSelect">
+          <option value="">– bitte wählen –</option>
+        </select>
+      </div>
+      <div class="form-group" id="pinWrap" style="display:none">
+        <label>Persönliche PIN</label>
+        <input type="password" id="memberPin" placeholder="PIN eingeben" maxlength="10" inputmode="numeric" autocomplete="off">
+      </div>
+      <div class="alert alert-error" id="pinFehler" style="display:none">Falsche PIN. Bitte erneut versuchen.</div>
+      <div class="alert alert-warn" id="pinNichtGesetzt" style="display:none">Für dich ist keine PIN hinterlegt – bitte wende dich an die Leitung.</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="resetAll();showScreen('s-start')">← Zurück</button>
+      <button class="btn btn-primary" id="btnWeiterMember" onclick="pruefeMemberPin()" disabled>Weiter →</button>
+    </div>
+  </div>
+
+  <!-- ══ MITGLIED: OFFENE RUNDEN ═════════════════════════════════════════ -->
+  <div class="screen" id="s-member-liste">
+    <div class="card">
+      <div class="card-title">Offene Bewertungen</div>
+      <div class="alert alert-info" style="font-size:0.85rem">
+        Deine Antworten werden anonym gespeichert – es wird nur festgehalten, dass du teilgenommen hast, nicht was du geantwortet hast.
+      </div>
+      <div id="offeneRunden"></div>
+      <div class="alert alert-ok" id="keineOffenenRunden" style="display:none">Aktuell gibt es für dich keine offenen Bewertungen. Danke, dass du reingeschaut hast!</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="resetAll();showScreen('s-start')">⌂ Startseite</button>
+    </div>
+  </div>
+
+  <!-- ══ MITGLIED: FRAGEBOGEN ════════════════════════════════════════════ -->
+  <div class="screen" id="s-member-form">
+    <div class="card">
+      <div class="card-title" id="formTitel">Bewertung</div>
+
+      <div class="form-group">
+        <label>Deine Stimmgruppe</label>
+        <select id="formStimmgruppe">
+          <option value="Sopran">Sopran</option>
+          <option value="Alt">Alt</option>
+          <option value="Tenor">Tenor</option>
+          <option value="Bass">Bass</option>
+        </select>
+      </div>
+
+      <div class="section-label">Würdest du mit diesem Dirigenten erneut arbeiten wollen?</div>
+      <div class="section-hint">Diese Frage bitte immer beantworten.</div>
+      <div class="vote-buttons-3" id="wiederArbeitenButtons">
+        <div class="vote-big" data-val="ja" onclick="waehleWiederArbeiten('ja', this)">Ja, unbedingt!</div>
+        <div class="vote-big" data-val="vielleicht" onclick="waehleWiederArbeiten('vielleicht', this)">meinetwegen…</div>
+        <div class="vote-big" data-val="nein" onclick="waehleWiederArbeiten('nein', this)">Nein, niemals!</div>
+      </div>
+
+      <div class="section-label">Zusammenfassende Bewertung</div>
+      <div class="section-hint">Einfache, auch gern "bauchgefühlte" Gesamteinschätzung der Arbeit.</div>
+      <div class="vote-buttons-3" id="gesamtButtons" style="grid-template-columns:repeat(5,1fr)">
+        <div class="vote-big" data-val="sehr_gut" onclick="waehleGesamt('sehr_gut', this)">Sehr gut</div>
+        <div class="vote-big" data-val="gut" onclick="waehleGesamt('gut', this)">Gut</div>
+        <div class="vote-big" data-val="in_ordnung" onclick="waehleGesamt('in_ordnung', this)">Geht in Ordnung</div>
+        <div class="vote-big" data-val="schlecht" onclick="waehleGesamt('schlecht', this)">Schlecht</div>
+        <div class="vote-big" data-val="inakzeptabel" onclick="waehleGesamt('inakzeptabel', this)">Inakzeptabel</div>
+      </div>
+
+      <div class="section-label">a) Inwieweit treffen die folgenden Aussagen für dich zu?</div>
+      <div class="section-hint">1 = trifft sehr zu … 5 = trifft gar nicht zu. Kein Kreuz = Enthaltung.</div>
+      <div id="fragenA"></div>
+
+      <div class="section-label">b) Eignung für bestimmte Aufgaben und Literatur</div>
+      <div class="section-hint">Ich halte den Dirigenten geeignet: 1 = trifft sehr zu … 5 = trifft gar nicht zu.</div>
+      <div id="fragenB"></div>
+
+      <div class="section-label">c) Weitere Hinweise</div>
+      <div class="section-hint">Bitte konstruktiv und sachlich. Nur die Leitung/der Vorstand liest diese Kommentare.</div>
+      <div class="form-group">
+        <textarea id="formKommentar" rows="4" placeholder="Freitext (optional)"></textarea>
+      </div>
+
+      <div class="alert alert-error" id="formFehler" style="display:none"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="showScreen('s-member-liste')">← Zurück</button>
+      <button class="btn btn-primary" onclick="bewertungAbsenden()">Bewertung absenden ✓</button>
+    </div>
+  </div>
+
+  <!-- ══ MITGLIED: DANKE ══════════════════════════════════════════════════ -->
+  <div class="screen" id="s-member-danke">
+    <div class="card">
+      <div class="warten-wrap">
+        <div class="icon">🙏</div>
+        <h2>Danke für deine Bewertung!</h2>
+        <p>Deine Antworten wurden anonym gespeichert.</p>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="resetAll();showScreen('s-start')">⌂ Startseite</button>
+      <button class="btn btn-primary" onclick="ladeOffeneRunden()">Weitere offene Bewertung ansehen →</button>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+// ════════════════════════════════════════════════════════════════════════
+// KONFIGURATION - dieselben Werte wie in den übrigen Apps
+// ════════════════════════════════════════════════════════════════════════
+const SUPABASE_URL = 'https://lqfoybhgtlyvnbtuwggi.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_MJUP_gLZccCY-UUlF1p7oQ_JB1hta_g';
+const ADMIN_PASS   = 'kl@usdieter240405';
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+
+// ════════════════════════════════════════════════════════════════════════
+// FRAGENKATALOG (muss zu den Spalten in d_bewertungen passen)
+// ════════════════════════════════════════════════════════════════════════
+const FRAGEN_A = [
+  ['q_probenarbeit_effektiv',     'Die Probenarbeit war effektiv.'],
+  ['q_probenarbeit_strukturiert', 'Die Probenarbeit war geplant und strukturiert.'],
+  ['q_probleme_erkannt',          'Probleme wurden gut erkannt und auch angesprochen.'],
+  ['q_methodisch_paedagogisch',   'Der Dirigent war methodisch und pädagogisch geschickt.'],
+  ['q_ansagen_klar',              'Die Ansagen waren klar und verständlich.'],
+  ['q_klanghomogenitaet',         'Es wurde ausreichend an der Klanghomogenität gearbeitet.'],
+  ['q_intonation',                'Es wurde ausreichend an der Intonation gearbeitet.'],
+  ['q_dirigat_klar',              'Das Dirigat war klar und präzise.'],
+  ['q_dirigat_aussagekraeftig',   'Das Dirigat war aussagekräftig und der gewünschten Interpretation entsprechend.'],
+  ['q_chor_respektvoll',          'Der Chor wurde respektvoll behandelt.'],
+  ['q_stimmoekonomie',            'Die Stimmen wurden nicht überbelastet (Stimmökonomie).'],
+  ['q_proben_diszipliniert',      'Die Proben waren konzentriert und diszipliniert.'],
+  ['q_ausstrahlung_konzert',      'Der Dirigent besitzt eine sympathische und (voraussichtlich) publikumswirksame Ausstrahlung im Konzert.']
+];
+const FRAGEN_B = [
+  ['e_alte_musik',             'für Alte Musik'],
+  ['e_romantik_chorsinfonik',  'für Romantik und Chorsinfonik'],
+  ['e_moderne_musik',          'für Moderne Musik'],
+  ['e_gast_acappella',         'als Gastdirigent für a-cappella-Konzerte'],
+  ['e_gast_orchester',         'als Gastdirigent für Orchesterkonzerte'],
+  ['e_einstudierer_acappella', 'als Einstudierer für a-cappella-Konzerte'],
+  ['e_einstudierer_orchester', 'als Einstudierer für Orchesterkonzerte']
+];
+const GESAMT_LABEL = { sehr_gut:'Sehr gut', gut:'Gut', in_ordnung:'Geht in Ordnung', schlecht:'Schlecht', inakzeptabel:'Inakzeptabel' };
+const WIEDER_LABEL = { ja:'Ja, unbedingt', vielleicht:'Meinetwegen', nein:'Nein, niemals' };
+
+// ════════════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════════════
+let alleDirigenten   = [];   // zuletzt geladenes Ranking
+let currentDirigent  = null; // {dirigent_id, name, ...} im Admin-Detail
+let currentDetail    = null; // Ergebnis von d_detail()
+let alleMitglieder   = [];
+let currentMitglied  = null;
+let offeneRunden     = [];
+let currentRunde     = null; // {id, dirigent_id, dirigent_name, werk, arbeitsperiode}
+let antworten        = {};   // aktuelle Fragebogen-Antworten
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+function setRoleBadge(text) {
+  const el = document.getElementById('roleBadge');
+  el.textContent = text;
+  el.classList.toggle('visible', !!text);
+}
+function resetAll() {
+  setRoleBadge('');
+  currentMitglied = null; currentRunde = null; antworten = {};
+  document.getElementById('startAlert').style.display = 'none';
+}
+function fNum(n) {
+  if (n === null || n === undefined) return '–';
+  const s = Number(n);
+  if (Number.isNaN(s)) return '–';
+  return s.toFixed(2).replace('.', ',');
+}
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ════════════════════════════════════════════════════════════════════════
+// ADMIN – LOGIN
+// ════════════════════════════════════════════════════════════════════════
+function goAdminLogin() {
+  if (sessionStorage.getItem('rkc_admin') === '1') {
+    adminNachLogin();
+  } else {
+    showScreen('s-admin-login');
+    setTimeout(() => document.getElementById('adminPass').focus(), 100);
+  }
+}
+document.getElementById('adminPass').addEventListener('keydown', e => { if (e.key === 'Enter') checkLogin(); });
+function checkLogin() {
+  if (document.getElementById('adminPass').value === ADMIN_PASS) {
+    sessionStorage.setItem('rkc_admin', '1');
+    document.getElementById('adminPass').value = '';
+    document.getElementById('loginError').style.display = 'none';
+    adminNachLogin();
+  } else {
+    document.getElementById('loginError').style.display = 'block';
+  }
+}
+function adminNachLogin() {
+  setRoleBadge('Leitung');
+  showScreen('s-admin-home');
+  ladeRanking();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// ADMIN – RANKING (RPC d_ranking, liefert nur Aggregate)
+// ════════════════════════════════════════════════════════════════════════
+async function ladeRanking() {
+  const { data, error } = await sb.rpc('d_ranking');
+  if (error) { alert('Fehler beim Laden: ' + error.message); return; }
+  alleDirigenten = data || [];
+  renderRanking();
+}
+function renderRanking() {
+  const body = document.getElementById('rankingBody');
+  const empty = document.getElementById('rankingEmpty');
+  if (!alleDirigenten.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  const sorted = alleDirigenten.slice().sort((a, b) => {
+    const av = a.avg_bewertung_gesamt, bv = b.avg_bewertung_gesamt;
+    if (av == null && bv == null) return a.name.localeCompare(b.name, 'de');
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return av - bv; // 1 = beste Note zuerst
+  });
+  body.innerHTML = sorted.map(d => `
+    <tr class="clickable" onclick="openDirigentDetail('${d.dirigent_id}')">
+      <td><strong>${esc(d.name)}</strong></td>
+      <td class="center">${fNum(d.avg_bewertung_gesamt)}</td>
+      <td class="center">${fNum(d.avg_eignung_gesamt)}</td>
+      <td class="center">${fNum(d.avg_gesamtnote)}</td>
+      <td class="center">${fNum(d.avg_wieder_arbeiten)}</td>
+      <td class="center">${d.anzahl_bewertungen}</td>
+    </tr>`).join('');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// ADMIN – NEUER DIRIGENT
+// ════════════════════════════════════════════════════════════════════════
+async function dirigentAnlegen() {
+  const name = document.getElementById('neuDirigentName').value.trim();
+  if (!name) { alert('Bitte einen Namen eingeben.'); return; }
+  const { data, error } = await sb.from('dirigenten').insert({ name }).select().single();
+  if (error) { alert('Fehler: ' + error.message); return; }
+  document.getElementById('neuDirigentName').value = '';
+  await ladeRanking();
+  openDirigentDetail(data.id);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// ADMIN – DIRIGENT-DETAIL
+// ════════════════════════════════════════════════════════════════════════
+async function openDirigentDetail(id) {
+  const { data, error } = await sb.rpc('d_detail', { p_dirigent_id: id });
+  if (error) { alert('Fehler: ' + error.message); return; }
+  currentDetail = data;
+  currentDirigent = { id, name: data.name };
+  renderDirigentDetail();
+  showScreen('s-admin-detail');
+}
+function chartRow(label, n, total) {
+  const pct = total > 0 ? Math.round(n / total * 100) : 0;
+  return `<div class="chart-row">
+    <div class="chart-label"><span>${esc(label)}</span><span>${n} (${pct} %)</span></div>
+    <div class="chart-bar-bg"><div class="chart-bar" style="width:${pct}%"></div></div>
+  </div>`;
+}
+function renderDirigentDetail() {
+  const d = currentDetail;
+  document.getElementById('detailTitel').textContent = d.name;
+  const wa = d.wieder_arbeiten, gb = d.gesamtbewertung, total = d.anzahl_bewertungen;
+
+  document.getElementById('detailStats').innerHTML = `
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem">${total} Bewertung${total===1?'':'en'} insgesamt</p>
+    <div class="section-label" style="margin-top:0">Würde wieder arbeiten mit …</div>
+    ${chartRow(WIEDER_LABEL.ja, wa.ja, total)}
+    ${chartRow(WIEDER_LABEL.vielleicht, wa.vielleicht, total)}
+    ${chartRow(WIEDER_LABEL.nein, wa.nein, total)}
+    <div class="section-label">Zusammenfassende Bewertung</div>
+    ${chartRow(GESAMT_LABEL.sehr_gut, gb.sehr_gut, total)}
+    ${chartRow(GESAMT_LABEL.gut, gb.gut, total)}
+    ${chartRow(GESAMT_LABEL.in_ordnung, gb.in_ordnung, total)}
+    ${chartRow(GESAMT_LABEL.schlecht, gb.schlecht, total)}
+    ${chartRow(GESAMT_LABEL.inakzeptabel, gb.inakzeptabel, total)}
+  `;
+
+  const rl = document.getElementById('rundenListe');
+  if (!d.runden.length) {
+    rl.innerHTML = '<p style="font-size:0.85rem;color:var(--muted)">Noch keine Bewertungsrunde angelegt.</p>';
+  } else {
+    rl.innerHTML = d.runden.map(r => `
+      <div class="runde-item" style="cursor:default">
+        <div style="flex:1">
+          <div class="ri-name">${esc(r.werk || '(ohne Werk-Angabe)')} <span class="badge badge-${r.status}">${r.status}</span></div>
+          <div class="ri-sub">${esc(r.arbeitsperiode || '')} &middot; ${r.anzahl_bewertungen} Bewertung${r.anzahl_bewertungen===1?'':'en'}</div>
+        </div>
+        ${r.status === 'offen'
+          ? `<button class="btn btn-ghost btn-sm" onclick="rundeSchliessen('${r.runde_id}')">Schließen</button>`
+          : `<button class="btn btn-outline btn-sm" onclick="rundeOeffnen('${r.runde_id}')">Wieder öffnen</button>`}
+      </div>`).join('');
+  }
+
+  const fa = document.getElementById('detailFragenA');
+  fa.innerHTML = FRAGEN_A.map(([key, label]) => {
+    const f = d.fragen[key] || { avg: null, n: 0 };
+    const pct = f.avg ? Math.max(0, Math.round((5 - f.avg) / 4 * 100)) : 0;
+    return `<div class="chart-row">
+      <div class="chart-label"><span>${esc(label)}</span><span>${fNum(f.avg)} (n=${f.n})</span></div>
+      <div class="chart-bar-bg"><div class="chart-bar" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+
+  const fb = document.getElementById('detailFragenB');
+  fb.innerHTML = FRAGEN_B.map(([key, label]) => {
+    const f = d.fragen[key] || { avg: null, n: 0 };
+    const pct = f.avg ? Math.max(0, Math.round((5 - f.avg) / 4 * 100)) : 0;
+    return `<div class="chart-row">
+      <div class="chart-label"><span>${esc(label)}</span><span>${fNum(f.avg)} (n=${f.n})</span></div>
+      <div class="chart-bar-bg"><div class="chart-bar" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+async function runde_anlegen() {
+  const werk = document.getElementById('neuRundeWerk').value.trim();
+  const zeit = document.getElementById('neuRundeZeit').value.trim();
+  const { error } = await sb.from('d_runden').insert({
+    dirigent_id: currentDirigent.id, werk, arbeitsperiode: zeit,
+    status: 'offen', geoeffnet_am: new Date().toISOString()
+  });
+  if (error) { alert('Fehler: ' + error.message); return; }
+  document.getElementById('neuRundeWerk').value = '';
+  document.getElementById('neuRundeZeit').value = '';
+  await openDirigentDetail(currentDirigent.id);
+}
+async function rundeSchliessen(id) {
+  if (!confirm('Diese Bewertungsrunde jetzt schließen? Mitglieder können danach nicht mehr abstimmen.')) return;
+  const { error } = await sb.from('d_runden').update({ status: 'geschlossen', geschlossen_am: new Date().toISOString() }).eq('id', id);
+  if (error) { alert('Fehler: ' + error.message); return; }
+  await openDirigentDetail(currentDirigent.id);
+}
+async function rundeOeffnen(id) {
+  const { error } = await sb.from('d_runden').update({ status: 'offen', geschlossen_am: null }).eq('id', id);
+  if (error) { alert('Fehler: ' + error.message); return; }
+  await openDirigentDetail(currentDirigent.id);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// ADMIN – CSV-EXPORT (nur aggregierte Werte, keine Einzeldaten)
+// ════════════════════════════════════════════════════════════════════════
+function dlFile(content, name, mime) {
+  const b = new Blob([content], { type: mime });
+  const u = URL.createObjectURL(b);
+  const a = document.createElement('a'); a.href = u; a.download = name; a.click();
+  URL.revokeObjectURL(u);
+}
+function csvBom() { return '﻿'; }
+function csvRanking() {
+  if (!alleDirigenten.length) { alert('Keine Daten vorhanden.'); return; }
+  const header = ['Dirigent', 'Ø Kernfragen', 'Ø Eignung', 'Ø Gesamtnote', 'Ø Wieder arbeiten', 'Ja', 'Meinetwegen', 'Nein', 'Anzahl Bewertungen'];
+  const rows = alleDirigenten.map(d => [d.name, fNum(d.avg_bewertung_gesamt), fNum(d.avg_eignung_gesamt),
+    fNum(d.avg_gesamtnote), fNum(d.avg_wieder_arbeiten), d.n_ja, d.n_vielleicht, d.n_nein, d.anzahl_bewertungen]
+    .map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'));
+  dlFile(csvBom() + header.join(';') + '\r\n' + rows.join('\r\n'), 'Dirigenten_Ranking.csv', 'text/csv');
+}
+function csvDetail() {
+  if (!currentDetail) return;
+  const d = currentDetail;
+  const rows = [['Frage', 'Durchschnitt', 'Anzahl Antworten'].map(v=>`"${v}"`).join(';')];
+  FRAGEN_A.concat(FRAGEN_B).forEach(([key, label]) => {
+    const f = d.fragen[key] || { avg: null, n: 0 };
+    rows.push([label, fNum(f.avg), f.n].map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'));
+  });
+  rows.push(['Würde wieder arbeiten: Ja', d.wieder_arbeiten.ja, ''].map(v=>`"${v}"`).join(';'));
+  rows.push(['Würde wieder arbeiten: Meinetwegen', d.wieder_arbeiten.vielleicht, ''].map(v=>`"${v}"`).join(';'));
+  rows.push(['Würde wieder arbeiten: Nein', d.wieder_arbeiten.nein, ''].map(v=>`"${v}"`).join(';'));
+  dlFile(csvBom() + rows.join('\r\n'), 'Dirigent_' + d.name.replace(/\s+/g,'_') + '.csv', 'text/csv');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// MITGLIED – IDENTIFIKATION (Name + PIN, wie bei Probezeit/Vorsingen)
+// ════════════════════════════════════════════════════════════════════════
+async function goMemberStart() {
+  setRoleBadge('Mitglied');
+  const { data, error } = await sb.from('mitglieder').select('id, vorname, nachname, stimme, pin').order('nachname');
+  if (error) { alert('Fehler: ' + error.message); return; }
+  alleMitglieder = data || [];
+  const sel = document.getElementById('memberSelect');
+  sel.innerHTML = '<option value="">– bitte wählen –</option>' +
+    alleMitglieder.map(m => `<option value="${m.id}">${esc(m.vorname)} ${esc(m.nachname)}</option>`).join('');
+  sel.onchange = () => waehleMitglied(sel.value);
+  document.getElementById('pinWrap').style.display = 'none';
+  document.getElementById('pinFehler').style.display = 'none';
+  document.getElementById('pinNichtGesetzt').style.display = 'none';
+  document.getElementById('btnWeiterMember').disabled = true;
+  showScreen('s-member-name');
+}
+function waehleMitglied(mid) {
+  document.getElementById('pinFehler').style.display = 'none';
+  document.getElementById('pinNichtGesetzt').style.display = 'none';
+  document.getElementById('memberPin').value = '';
+  document.getElementById('btnWeiterMember').disabled = true;
+  document.getElementById('pinWrap').style.display = 'none';
+  if (!mid) return;
+  const m = alleMitglieder.find(x => x.id === mid);
+  currentMitglied = m;
+  if (!m.pin) { document.getElementById('pinNichtGesetzt').style.display = 'block'; return; }
+  document.getElementById('pinWrap').style.display = 'block';
+  document.getElementById('btnWeiterMember').disabled = false;
+  setTimeout(() => document.getElementById('memberPin').focus(), 100);
+}
+document.getElementById('memberPin').addEventListener('keydown', e => { if (e.key === 'Enter') pruefeMemberPin(); });
+function pruefeMemberPin() {
+  if (!currentMitglied) return;
+  const eingabe = document.getElementById('memberPin').value.trim();
+  if (eingabe !== String(currentMitglied.pin)) {
+    document.getElementById('pinFehler').style.display = 'block';
+    document.getElementById('memberPin').value = '';
+    document.getElementById('memberPin').focus();
+    return;
+  }
+  document.getElementById('pinFehler').style.display = 'none';
+  ladeOffeneRunden();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// MITGLIED – OFFENE RUNDEN
+// ════════════════════════════════════════════════════════════════════════
+async function ladeOffeneRunden() {
+  const [{ data: runden, error: e1 }, { data: bereits, error: e2 }] = await Promise.all([
+    sb.from('d_runden').select('id, werk, arbeitsperiode, dirigenten(name)').eq('status', 'offen'),
+    sb.from('d_hat_bewertet').select('runde_id').eq('mitglied_id', currentMitglied.id)
+  ]);
+  if (e1 || e2) { alert('Fehler: ' + ((e1||e2).message)); return; }
+  const erledigt = new Set((bereits || []).map(x => x.runde_id));
+  offeneRunden = (runden || []).filter(r => !erledigt.has(r.id));
+  renderOffeneRunden();
+  showScreen('s-member-liste');
+}
+function renderOffeneRunden() {
+  const el = document.getElementById('offeneRunden');
+  const empty = document.getElementById('keineOffenenRunden');
+  if (!offeneRunden.length) { el.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+  el.innerHTML = offeneRunden.map(r => `
+    <div class="runde-item" onclick="startFragebogen('${r.id}')">
+      <div style="flex:1">
+        <div class="ri-name">${esc(r.dirigenten ? r.dirigenten.name : '?')}</div>
+        <div class="ri-sub">${esc(r.werk || '')}${r.werk && r.arbeitsperiode ? ' · ' : ''}${esc(r.arbeitsperiode || '')}</div>
+      </div>
+      <span style="color:var(--muted)">→</span>
+    </div>`).join('');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// MITGLIED – FRAGEBOGEN
+// ════════════════════════════════════════════════════════════════════════
+function likertRow(key, label) {
+  const cells = [1,2,3,4,5].map(v => `<div class="likert-btn" data-v="${v}" onclick="likertWaehlen('${key}', ${v}, this)">${v}</div>`).join('');
+  return `<div class="likert-row" data-key="${key}">
+    <div class="likert-text">${esc(label)}</div>
+    <div class="likert-scale">${cells}</div>
+    <div class="likert-hint"><span>trifft sehr zu</span><span>trifft gar nicht zu</span></div>
+  </div>`;
+}
+function startFragebogen(rundeId) {
+  const r = offeneRunden.find(x => x.id === rundeId);
+  if (!r) return;
+  currentRunde = { id: r.id, dirigent_name: r.dirigenten ? r.dirigenten.name : '?', werk: r.werk, arbeitsperiode: r.arbeitsperiode };
+  antworten = {};
+  document.getElementById('formTitel').textContent = 'Bewertung – ' + currentRunde.dirigent_name +
+    (currentRunde.werk ? ' (' + currentRunde.werk + ')' : '');
+
+  const stimmMap = { S:'Sopran', A:'Alt', T:'Tenor', B:'Bass' };
+  document.getElementById('formStimmgruppe').value = stimmMap[currentMitglied.stimme] || 'Sopran';
+
+  document.querySelectorAll('#wiederArbeitenButtons .vote-big').forEach(b => b.classList.remove('selected'));
+  document.querySelectorAll('#gesamtButtons .vote-big').forEach(b => b.classList.remove('selected'));
+  document.getElementById('fragenA').innerHTML = FRAGEN_A.map(([k,l]) => likertRow(k,l)).join('');
+  document.getElementById('fragenB').innerHTML = FRAGEN_B.map(([k,l]) => likertRow(k,l)).join('');
+  document.getElementById('formKommentar').value = '';
+  document.getElementById('formFehler').style.display = 'none';
+  showScreen('s-member-form');
+}
+function waehleWiederArbeiten(val, el) {
+  antworten.wieder_arbeiten = val;
+  document.querySelectorAll('#wiederArbeitenButtons .vote-big').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+function waehleGesamt(val, el) {
+  if (antworten.gesamtbewertung === val) {
+    antworten.gesamtbewertung = null;
+    el.classList.remove('selected');
+    return;
+  }
+  antworten.gesamtbewertung = val;
+  document.querySelectorAll('#gesamtButtons .vote-big').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+function likertWaehlen(key, val, el) {
+  const row = el.closest('.likert-row');
+  if (antworten[key] === val) {
+    antworten[key] = null;
+    row.querySelectorAll('.likert-btn').forEach(b => b.classList.remove('selected'));
+    return;
+  }
+  antworten[key] = val;
+  row.querySelectorAll('.likert-btn').forEach(b => b.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+async function bewertungAbsenden() {
+  const fehlerEl = document.getElementById('formFehler');
+  fehlerEl.style.display = 'none';
+  if (!antworten.wieder_arbeiten) {
+    fehlerEl.textContent = 'Bitte beantworte zuerst die Frage "Würdest du erneut arbeiten wollen?" – diese ist Pflicht.';
+    fehlerEl.style.display = 'block';
+    window.scrollTo(0, 0);
+    return;
+  }
+  if (!confirm('Bewertung jetzt absenden? Das kann danach nicht mehr geändert werden.')) return;
+
+  const payload = {
+    runde_id: currentRunde.id,
+    stimmgruppe: document.getElementById('formStimmgruppe').value,
+    wieder_arbeiten: antworten.wieder_arbeiten,
+    gesamtbewertung: antworten.gesamtbewertung || null,
+    kommentar: document.getElementById('formKommentar').value.trim() || null
+  };
+  FRAGEN_A.concat(FRAGEN_B).forEach(([key]) => { payload[key] = antworten[key] || null; });
+
+  const { error: e1 } = await sb.from('d_bewertungen').insert(payload);
+  if (e1) { fehlerEl.textContent = 'Fehler beim Speichern: ' + e1.message; fehlerEl.style.display = 'block'; return; }
+
+  const { error: e2 } = await sb.from('d_hat_bewertet').insert({ runde_id: currentRunde.id, mitglied_id: currentMitglied.id });
+  if (e2) { fehlerEl.textContent = 'Deine Bewertung wurde gespeichert, aber der Teilnahme-Status konnte nicht aktualisiert werden: ' + e2.message; fehlerEl.style.display = 'block'; return; }
+
+  showScreen('s-member-danke');
+}
+</script>
+</body>
+</html>
