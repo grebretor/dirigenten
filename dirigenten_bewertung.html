@@ -188,7 +188,6 @@
     <span>Dirigenten-Bewertung</span>
   </div>
   <div class="role-badge" id="roleBadge"></div>
-  <button id="btnDirektlinks" class="btn btn-outline btn-sm" style="display:none;margin-left:0.5rem" onclick="openDirektlinks()">🔗 Direktlinks</button>
 </header>
 
 <div class="container">
@@ -239,8 +238,8 @@
       </p>
       <div class="tw"><table>
         <thead><tr>
-          <th>Dirigent</th><th class="center">Ø Kernfragen</th><th class="center">Ø Eignung</th>
-          <th class="center">Ø Gesamtnote</th><th class="center">Wieder arbeiten?</th><th class="center">n</th>
+          <th>Dirigent</th><th class="center">Ø Kernfragen</th>
+          <th class="center">Ø Gesamtnote</th><th class="center">Wieder einladen?</th><th class="center">n</th>
         </tr></thead>
         <tbody id="rankingBody"></tbody>
       </table></div>
@@ -371,7 +370,7 @@
         </select>
       </div>
 
-      <div class="section-label">Würdest du mit diesem Dirigenten erneut arbeiten wollen?</div>
+      <div class="section-label">Würdest du diesen Dirigenten wieder einladen?</div>
       <div class="section-hint">Diese Frage bitte immer beantworten.</div>
       <div class="vote-buttons-3" id="wiederArbeitenButtons">
         <div class="vote-big" data-val="ja" onclick="waehleWiederArbeiten('ja', this)">Ja, unbedingt!</div>
@@ -427,25 +426,6 @@
   </div>
 
 </div><!-- /container -->
-
-<!-- ══ MODAL: DIREKTLINKS (nur Leitung) ═════════════════════════════════ -->
-<div id="m-direktlinks" style="display:none;position:fixed;inset:0;background:rgba(26,23,20,.55);z-index:250;align-items:flex-start;justify-content:center">
-  <div style="background:var(--card);border-top:3px solid var(--gold);padding:20px;width:100%;max-width:760px;max-height:96vh;overflow-y:auto;border-radius:0 0 12px 12px;box-shadow:0 4px 24px rgba(0,0,0,.15)">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:1rem">
-      <div style="font-family:'Playfair Display',serif;font-size:1.1rem;color:var(--blue)">🔗 Direktlinks für Mitglieder</div>
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('m-direktlinks').style.display='none'">Schließen</button>
-    </div>
-    <div class="alert alert-info" style="font-size:0.82rem">
-      Jeder Link identifiziert das Mitglied automatisch (Name + PIN) und führt direkt zur Liste der offenen Bewertungen.
-      Zum Versand: Tabelle unten kopieren und in Mailmeteor bzw. eine Google-Sheets-Vorlage einfügen.
-    </div>
-    <div id="dlBody"></div>
-    <div class="btn-row no-print">
-      <span></span>
-      <button class="btn btn-primary" onclick="kopiereDirektlinks()">📋 Für Mailmeteor kopieren</button>
-    </div>
-  </div>
-</div>
 
 <script>
 // ════════════════════════════════════════════════════════════════════════
@@ -515,7 +495,6 @@ function resetAll() {
   setRoleBadge('');
   currentMitglied = null; currentRunde = null; antworten = {};
   document.getElementById('startAlert').style.display = 'none';
-  document.getElementById('btnDirektlinks').style.display = 'none';
 }
 function fNum(n) {
   if (n === null || n === undefined) return '–';
@@ -549,7 +528,6 @@ function checkLogin() {
 }
 function adminNachLogin() {
   setRoleBadge('Leitung');
-  document.getElementById('btnDirektlinks').style.display = 'inline-block';
   showScreen('s-admin-home');
   ladeRanking();
 }
@@ -579,7 +557,6 @@ function renderRanking() {
     <tr class="clickable" onclick="openDirigentDetail('${d.dirigent_id}')">
       <td><strong>${esc(d.name)}</strong></td>
       <td class="center">${fNum(d.avg_bewertung_gesamt)}</td>
-      <td class="center">${fNum(d.avg_eignung_gesamt)}</td>
       <td class="center">${fNum(d.avg_gesamtnote)}</td>
       <td class="center">${fNum(d.avg_wieder_arbeiten)}</td>
       <td class="center">${d.anzahl_bewertungen}</td>
@@ -617,7 +594,7 @@ async function openDirigentDetail(id) {
 function chartRow(label, n, total) {
   const pct = total > 0 ? Math.round(n / total * 100) : 0;
   return `<div class="chart-row">
-    <div class="chart-label"><span>${esc(label)}</span><span>${n} (${pct} %)</span></div>
+    <div class="chart-label"><span>${esc(label)}</span><span>${n} (${pct} %)</span></div>
     <div class="chart-bar-bg"><div class="chart-bar" style="width:${pct}%"></div></div>
   </div>`;
 }
@@ -629,7 +606,7 @@ function renderDirigentDetail() {
   document.getElementById('detailStats').innerHTML = `
     <div class="card-title" style="margin-top:0">Auswertung</div>
     <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem">${total} Bewertung${total===1?'':'en'} insgesamt</p>
-    <div class="section-label" style="margin-top:0">Ich würde mit ${esc(d.name)} wieder arbeiten.</div>
+    <div class="section-label" style="margin-top:0">Ich würde ${esc(d.name)} wieder einladen.</div>
     ${chartRow(WIEDER_LABEL.ja, wa.ja, total)}
     ${chartRow(WIEDER_LABEL.vielleicht, wa.vielleicht, total)}
     ${chartRow(WIEDER_LABEL.nein, wa.nein, total)}
@@ -764,8 +741,8 @@ function dlFile(content, name, mime) {
 function csvBom() { return '﻿'; }
 function csvRanking() {
   if (!alleDirigenten.length) { alert('Keine Daten vorhanden.'); return; }
-  const header = ['Dirigent', 'Ø Kernfragen', 'Ø Eignung', 'Ø Gesamtnote', 'Ø Wieder arbeiten', 'Ja', 'Meinetwegen', 'Nein', 'Anzahl Bewertungen'];
-  const rows = alleDirigenten.map(d => [d.name, fNum(d.avg_bewertung_gesamt), fNum(d.avg_eignung_gesamt),
+  const header = ['Dirigent', 'Ø Kernfragen', 'Ø Gesamtnote', 'Ø Wieder einladen', 'Ja', 'Meinetwegen', 'Nein', 'Anzahl Bewertungen'];
+  const rows = alleDirigenten.map(d => [d.name, fNum(d.avg_bewertung_gesamt),
     fNum(d.avg_gesamtnote), fNum(d.avg_wieder_arbeiten), d.n_ja, d.n_vielleicht, d.n_nein, d.anzahl_bewertungen]
     .map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'));
   dlFile(csvBom() + header.join(';') + '\r\n' + rows.join('\r\n'), 'Dirigenten_Ranking.csv', 'text/csv');
@@ -778,76 +755,10 @@ function csvDetail() {
     const f = d.fragen[key] || { avg: null, n: 0 };
     rows.push([label, fNum(f.avg), f.n].map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'));
   });
-  rows.push(['Würde wieder arbeiten: Ja', d.wieder_arbeiten.ja, ''].map(v=>`"${v}"`).join(';'));
-  rows.push(['Würde wieder arbeiten: Meinetwegen', d.wieder_arbeiten.vielleicht, ''].map(v=>`"${v}"`).join(';'));
-  rows.push(['Würde wieder arbeiten: Nein', d.wieder_arbeiten.nein, ''].map(v=>`"${v}"`).join(';'));
+  rows.push(['Würde wieder einladen: Ja', d.wieder_arbeiten.ja, ''].map(v=>`"${v}"`).join(';'));
+  rows.push(['Würde wieder einladen: Meinetwegen', d.wieder_arbeiten.vielleicht, ''].map(v=>`"${v}"`).join(';'));
+  rows.push(['Würde wieder einladen: Nein', d.wieder_arbeiten.nein, ''].map(v=>`"${v}"`).join(';'));
   dlFile(csvBom() + rows.join('\r\n'), 'Dirigent_' + d.name.replace(/\s+/g,'_') + '.csv', 'text/csv');
-}
-
-// ════════════════════════════════════════════════════════════════════════
-// ADMIN – DIREKTLINKS FÜR MITGLIEDER (zum Kopieren nach Mailmeteor etc.)
-// ════════════════════════════════════════════════════════════════════════
-async function openDirektlinks() {
-  const { data, error } = await sb.from('mitglieder').select('id, vorname, nachname, email, pin').order('nachname');
-  if (error) { alert('Fehler: ' + error.message); return; }
-
-  const base = location.origin + location.pathname;
-  const rows = (data || []).slice().sort((a, b) => a.nachname.localeCompare(b.nachname, 'de'));
-  const ok = rows.filter(m => m.pin && m.email);
-  const fehlend = rows.filter(m => !m.pin || !m.email);
-
-  const daten = ok.map(m => ({
-    email: m.email, vorname: m.vorname, nachname: m.nachname,
-    link: `${base}?m=${encodeURIComponent(m.id)}&p=${encodeURIComponent(m.pin)}`
-  }));
-  window._direktlinksDaten = daten;
-
-  const tableRows = daten.map(d => `<tr>
-      <td>${esc(d.nachname)}</td><td>${esc(d.vorname)}</td><td>${esc(d.email)}</td>
-      <td style="font-size:0.72rem;word-break:break-all;color:var(--muted)">${esc(d.link)}</td>
-    </tr>`).join('');
-
-  const fehlendHtml = fehlend.length
-    ? `<div class="alert alert-warn" style="margin-top:1rem">Ohne Link, da PIN und/oder E-Mail fehlt: ${fehlend.map(m => esc(m.vorname + ' ' + m.nachname)).join(', ')}</div>`
-    : '';
-
-  document.getElementById('dlBody').innerHTML = `
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.85rem">
-      <thead><tr>
-        <th style="text-align:left;padding:0.5rem 0.6rem;border-bottom:2px solid var(--border);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted)">Nachname</th>
-        <th style="text-align:left;padding:0.5rem 0.6rem;border-bottom:2px solid var(--border);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted)">Vorname</th>
-        <th style="text-align:left;padding:0.5rem 0.6rem;border-bottom:2px solid var(--border);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted)">E-Mail</th>
-        <th style="text-align:left;padding:0.5rem 0.6rem;border-bottom:2px solid var(--border);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted)">Link</th>
-      </tr></thead>
-      <tbody>${tableRows || '<tr><td colspan="4" style="padding:0.75rem;color:var(--muted)">Keine Mitglieder mit PIN und E-Mail vorhanden.</td></tr>'}</tbody>
-    </table></div>${fehlendHtml}`;
-
-  document.getElementById('m-direktlinks').style.display = 'flex';
-}
-
-function kopiereDirektlinks() {
-  const d = window._direktlinksDaten || [];
-  if (!d.length) { alert('Keine Mitglieder mit PIN und E-Mail vorhanden.'); return; }
-  const header = ['E-Mail', 'Vorname', 'Nachname', 'Link'].join('\t');
-  const rows = d.map(x => [x.email, x.vorname, x.nachname, x.link].join('\t'));
-  const text = [header, ...rows].join('\n');
-  const fertig = () => alert('Kopiert (' + d.length + ' Mitglieder) – bereit zum Einfügen in Mailmeteor / Google Sheets.');
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(fertig).catch(() => dlFallbackKopieren(text, fertig));
-  } else {
-    dlFallbackKopieren(text, fertig);
-  }
-}
-
-function dlFallbackKopieren(text, onOk) {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
-  document.body.appendChild(ta);
-  ta.select();
-  try { document.execCommand('copy'); onOk && onOk(); }
-  catch (e) { alert('Kopieren fehlgeschlagen – bitte manuell markieren und kopieren.'); }
-  document.body.removeChild(ta);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -895,37 +806,6 @@ function pruefeMemberPin() {
   document.getElementById('pinFehler').style.display = 'none';
   ladeOffeneRunden();
 }
-
-// ════════════════════════════════════════════════════════════════════════
-// DIREKTLINK: ?m=<mitglied_id>&p=<pin> identifiziert automatisch und
-// springt direkt zur Liste der offenen Bewertungen.
-// ════════════════════════════════════════════════════════════════════════
-async function versucheDirektlink() {
-  const params = new URLSearchParams(window.location.search);
-  const mid = params.get('m');
-  const pin = params.get('p');
-  if (!mid || !pin) return false;
-
-  const { data, error } = await sb.from('mitglieder').select('id, vorname, nachname, stimme, pin').order('nachname');
-  if (error) return false;
-  alleMitglieder = data || [];
-
-  const m = alleMitglieder.find(x => x.id === mid);
-  if (!m || !m.pin || String(m.pin) !== String(pin)) return false;
-
-  currentMitglied = m;
-  setRoleBadge('Mitglied');
-  await ladeOffeneRunden();
-  return true;
-}
-
-window.addEventListener('DOMContentLoaded', async () => {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('m')) {
-    const ok = await versucheDirektlink();
-    if (!ok) goMemberStart();
-  }
-});
 
 // ════════════════════════════════════════════════════════════════════════
 // MITGLIED – OFFENE RUNDEN
@@ -1017,7 +897,7 @@ async function bewertungAbsenden() {
   const fehlerEl = document.getElementById('formFehler');
   fehlerEl.style.display = 'none';
   if (!antworten.wieder_arbeiten) {
-    fehlerEl.textContent = 'Bitte beantworte zuerst die Frage "Würdest du erneut arbeiten wollen?" – diese ist Pflicht.';
+    fehlerEl.textContent = 'Bitte beantworte zuerst die Frage "Würdest du diesen Dirigenten wieder einladen?" – diese ist Pflicht.';
     fehlerEl.style.display = 'block';
     window.scrollTo(0, 0);
     return;
