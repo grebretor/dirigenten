@@ -239,7 +239,7 @@
       <div class="tw"><table>
         <thead><tr>
           <th>Dirigent</th><th class="center">Ø Kernfragen</th>
-          <th class="center">Ø Gesamtnote</th><th class="center">Wieder einladen?</th><th class="center">n</th>
+          <th class="center">Gesamteindruck</th><th class="center">Wieder einladen?</th><th class="center">n</th>
         </tr></thead>
         <tbody id="rankingBody"></tbody>
       </table></div>
@@ -389,7 +389,7 @@
       </div>
 
       <div class="section-label">a) Inwieweit treffen die folgenden Aussagen für dich zu?</div>
-      <div class="section-hint">1 = trifft sehr zu … 5 = trifft gar nicht zu. Kein Kreuz = Enthaltung.</div>
+      <div class="section-hint">1 = trifft sehr zu … 5 = trifft gar nicht zu.</div>
       <div id="fragenA"></div>
 
       <div class="section-label">b) Eignung für bestimmte Aufgaben und Literatur</div>
@@ -466,6 +466,14 @@ const FRAGEN_B = [
   ['e_einstudierer_orchester', 'als Einstudierer für Orchesterkonzerte']
 ];
 const GESAMT_LABEL = { sehr_gut:'Sehr gut', gut:'Gut', in_ordnung:'Geht in Ordnung', schlecht:'Schlecht', inakzeptabel:'Inakzeptabel' };
+// Reihenfolge entspricht der Zahlencodierung in der d_ranking-Funktion (1..5).
+const GESAMT_ADJEKTIV = [null, GESAMT_LABEL.sehr_gut, GESAMT_LABEL.gut, GESAMT_LABEL.in_ordnung, GESAMT_LABEL.schlecht, GESAMT_LABEL.inakzeptabel];
+function gesamtAdjektiv(avg) {
+  if (avg === null || avg === undefined) return '–';
+  const n = Math.round(Number(avg));
+  if (Number.isNaN(n) || n < 1 || n > 5) return '–';
+  return GESAMT_ADJEKTIV[n];
+}
 const WIEDER_LABEL = { ja:'Ja, unbedingt', vielleicht:'Meinetwegen', nein:'Nein, niemals' };
 
 // ════════════════════════════════════════════════════════════════════════
@@ -557,7 +565,7 @@ function renderRanking() {
     <tr class="clickable" onclick="openDirigentDetail('${d.dirigent_id}')">
       <td><strong>${esc(d.name)}</strong></td>
       <td class="center">${fNum(d.avg_bewertung_gesamt)}</td>
-      <td class="center">${fNum(d.avg_gesamtnote)}</td>
+      <td class="center">${gesamtAdjektiv(d.avg_gesamtnote)}</td>
       <td class="center">${fNum(d.avg_wieder_arbeiten)}</td>
       <td class="center">${d.anzahl_bewertungen}</td>
     </tr>`).join('');
@@ -741,9 +749,9 @@ function dlFile(content, name, mime) {
 function csvBom() { return '﻿'; }
 function csvRanking() {
   if (!alleDirigenten.length) { alert('Keine Daten vorhanden.'); return; }
-  const header = ['Dirigent', 'Ø Kernfragen', 'Ø Gesamtnote', 'Ø Wieder einladen', 'Ja', 'Meinetwegen', 'Nein', 'Anzahl Bewertungen'];
+  const header = ['Dirigent', 'Ø Kernfragen', 'Gesamteindruck', 'Ø Wieder einladen', 'Ja', 'Meinetwegen', 'Nein', 'Anzahl Bewertungen'];
   const rows = alleDirigenten.map(d => [d.name, fNum(d.avg_bewertung_gesamt),
-    fNum(d.avg_gesamtnote), fNum(d.avg_wieder_arbeiten), d.n_ja, d.n_vielleicht, d.n_nein, d.anzahl_bewertungen]
+    gesamtAdjektiv(d.avg_gesamtnote), fNum(d.avg_wieder_arbeiten), d.n_ja, d.n_vielleicht, d.n_nein, d.anzahl_bewertungen]
     .map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'));
   dlFile(csvBom() + header.join(';') + '\r\n' + rows.join('\r\n'), 'Dirigenten_Ranking.csv', 'text/csv');
 }
