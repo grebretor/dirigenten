@@ -295,7 +295,7 @@
     <div class="card">
       <div class="card-title">Bewertungsrunden</div>
       <div id="rundenListe"></div>
-      <div class="form-row" style="margin-top:1rem;align-items:flex-end">
+      <div class="form-row no-print" style="margin-top:1rem;align-items:flex-end">
         <div class="form-group" style="flex:2">
           <label>Werk / Programm</label>
           <input type="text" id="neuRundeWerk" placeholder="z. B. Brahms-Requiem">
@@ -331,6 +331,7 @@
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="showScreen('s-admin-home');ladeRanking()">← Zum Ranking</button>
       <button class="btn btn-outline" onclick="csvDetail()">📥 CSV (dieser Dirigent)</button>
+      <button class="btn btn-outline" onclick="window.print()">🖨️ Drucken / als PDF</button>
       <button class="btn btn-danger" onclick="dirigentLoeschen()" style="margin-left:auto">🗑 Dirigent löschen</button>
     </div>
   </div>
@@ -666,9 +667,12 @@ function renderDirigentDetail() {
           <div class="ri-name">${esc(r.werk || '(ohne Werk-Angabe)')} <span class="badge badge-${r.status}">${r.status}</span></div>
           <div class="ri-sub">${esc(r.arbeitsperiode || '')} &middot; ${r.anzahl_bewertungen} Bewertung${r.anzahl_bewertungen===1?'':'en'}</div>
         </div>
-        ${r.status === 'offen'
-          ? `<button class="btn btn-ghost btn-sm" onclick="rundeSchliessen('${r.runde_id}')">Schließen</button>`
-          : `<button class="btn btn-outline btn-sm" onclick="rundeOeffnen('${r.runde_id}')">Wieder öffnen</button>`}
+        <div class="no-print" style="display:flex;gap:0.5rem">
+          ${r.status === 'offen'
+            ? `<button class="btn btn-ghost btn-sm" onclick="rundeSchliessen('${r.runde_id}')">Schließen</button>`
+            : `<button class="btn btn-outline btn-sm" onclick="rundeOeffnen('${r.runde_id}')">Wieder öffnen</button>`}
+          <button class="btn btn-danger btn-sm" onclick="rundeLoeschen('${r.runde_id}')">Löschen</button>
+        </div>
       </div>`).join('');
   }
 
@@ -773,6 +777,17 @@ async function rundeSchliessen(id) {
 async function rundeOeffnen(id) {
   const { error } = await sb.from('d_runden').update({ status: 'offen', geschlossen_am: null }).eq('id', id);
   if (error) { alert('Fehler: ' + error.message); return; }
+  await openDirigentDetail(currentDirigent.id);
+}
+async function rundeLoeschen(id) {
+  const r = (currentDetail && currentDetail.runden || []).find(x => x.runde_id === id);
+  const bez = r ? (r.werk || '(ohne Werk-Angabe)') : 'diese Bewertungsrunde';
+  const hinweis = (r && r.anzahl_bewertungen > 0)
+    ? ' Achtung: Dazu gehören bereits ' + r.anzahl_bewertungen + ' abgegebene Bewertung' + (r.anzahl_bewertungen === 1 ? '' : 'en') + ', die damit ebenfalls unwiderruflich gelöscht werden.'
+    : '';
+  if (!confirm('Bewertungsrunde "' + bez + '" wirklich unwiderruflich löschen?' + hinweis)) return;
+  const { error } = await sb.from('d_runden').delete().eq('id', id);
+  if (error) { alert('Fehler beim Löschen: ' + error.message); return; }
   await openDirigentDetail(currentDirigent.id);
 }
 
