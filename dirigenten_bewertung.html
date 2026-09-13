@@ -83,6 +83,9 @@
     .badge-B { background: var(--b-bg); color: var(--b-col); }
     .badge-offen { background: #fff8e6; color: #7c5800; }
     .badge-geschlossen { background: #ededee; color: #3a3d45; }
+    .badge-ampel-ja { background: var(--ja-bg); color: var(--ja); }
+    .badge-ampel-notfalls { background: #fff8e6; color: #7c5800; }
+    .badge-ampel-nein { background: var(--nein-bg); color: var(--nein); }
 
     .alert { padding: 0.7rem 1rem; border-radius: 4px; font-size: 0.88rem; margin-bottom: 1rem; line-height: 1.5; }
     .alert-info  { background: #ededee; color: #3a3d45; border-left: 3px solid var(--blue); }
@@ -174,9 +177,13 @@
 
     @media print {
       header, .btn-row, .no-print { display: none !important; }
-      .card { box-shadow: none; }
+      .card { box-shadow: none; border: none; }
       body { background: white; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      .protokoll-dirigent { page-break-before: always; }
     }
+    .protokoll-meta { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.5rem; }
+    .protokoll-sub { font-family: 'Playfair Display', serif; font-size: 0.95rem; color: var(--blue); margin: 1.1rem 0 0.4rem; }
   </style>
 </head>
 <body>
@@ -249,8 +256,18 @@
       <button class="btn btn-ghost" onclick="resetAll();showScreen('s-start')">⌂ Startseite</button>
       <div class="right">
         <button class="btn btn-outline" onclick="csvRanking()">📥 CSV (Ranking)</button>
+        <button class="btn btn-outline" onclick="ladeGesamtprotokoll()">🖨️ Gesamtprotokoll</button>
         <button class="btn btn-primary" onclick="showScreen('s-admin-neu-dirigent')">+ Neuer Dirigent</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ══ ADMIN: GESAMTPROTOKOLL (DRUCK / PDF) ════════════════════════════ -->
+  <div class="screen" id="s-admin-protokoll">
+    <div id="protokollInhalt"></div>
+    <div class="btn-row no-print">
+      <button class="btn btn-ghost" onclick="showScreen('s-admin-home')">← Zurück</button>
+      <button class="btn btn-primary" onclick="window.print()">🖨️ Drucken / als PDF</button>
     </div>
   </div>
 
@@ -314,6 +331,7 @@
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="showScreen('s-admin-home');ladeRanking()">← Zum Ranking</button>
       <button class="btn btn-outline" onclick="csvDetail()">📥 CSV (dieser Dirigent)</button>
+      <button class="btn btn-danger" onclick="dirigentLoeschen()" style="margin-left:auto">🗑 Dirigent löschen</button>
     </div>
   </div>
 
@@ -475,6 +493,18 @@ function gesamtAdjektiv(avg) {
   return GESAMT_ADJEKTIV[n];
 }
 const WIEDER_LABEL = { ja:'Ja, unbedingt', vielleicht:'Meinetwegen', nein:'Nein, niemals' };
+// Reihenfolge entspricht der Zahlencodierung in der d_ranking-Funktion (1=ja, 2=vielleicht, 3=nein).
+const WIEDER_AMPEL = [null, { label: 'Ja', cls: 'ampel-ja' }, { label: 'Notfalls', cls: 'ampel-notfalls' }, { label: 'Nein', cls: 'ampel-nein' }];
+function wiederAmpel(avg) {
+  if (avg === null || avg === undefined) return { label: '–', cls: null };
+  const n = Math.round(Number(avg));
+  if (Number.isNaN(n) || n < 1 || n > 3) return { label: '–', cls: null };
+  return WIEDER_AMPEL[n];
+}
+function wiederBadge(avg) {
+  const a = wiederAmpel(avg);
+  return a.cls ? `<span class="badge badge-${a.cls}">${a.label}</span>` : a.label;
+}
 
 // ════════════════════════════════════════════════════════════════════════
 // STATE
@@ -566,7 +596,7 @@ function renderRanking() {
       <td><strong>${esc(d.name)}</strong></td>
       <td class="center">${fNum(d.avg_bewertung_gesamt)}</td>
       <td class="center">${gesamtAdjektiv(d.avg_gesamtnote)}</td>
-      <td class="center">${fNum(d.avg_wieder_arbeiten)}</td>
+      <td class="center">${wiederBadge(d.avg_wieder_arbeiten)}</td>
       <td class="center">${d.anzahl_bewertungen}</td>
     </tr>`).join('');
 }
@@ -670,19 +700,40 @@ function renderBemerkungen() {
 
 // Eignungs-Auswertung: sortiert nach Eignung (beste zuerst), mit Empfehlung
 // für die nächste Aufgabe. 1 = trifft sehr zu -> 100% Eignung, 5 -> 0%.
-function renderEignung(d) {
-  const box = document.getElementById('detailEmpfehlung');
-  const fb = document.getElementById('detailFragenB');
-
+// Gemeinsame Berechnung für Detailansicht UND Gesamtprotokoll (Druck).
+function computeEignung(d) {
   const items = FRAGEN_B.map(([key, label]) => {
     const f = d.fragen[key] || { avg: null, n: 0 };
     const pct = (f.avg != null) ? Math.max(0, Math.min(100, Math.round((5 - f.avg) / 4 * 100))) : null;
     return { key, label, avg: f.avg, n: f.n, pct };
   });
   const beantwortet = items.filter(i => i.pct != null);
+  if (!beantwortet.length) return { beantwortet: [], sortiert: [], top: [], topPct: null };
+  const sortiert = beantwortet.slice().sort((a, b) => b.pct - a.pct);
+  const topPct = sortiert[0].pct;
+  const top = sortiert.filter(i => i.pct === topPct);
+  return { beantwortet, sortiert, top, topPct };
+}
+// Baut den HTML-Text der Empfehlungsbox aus dem Ergebnis von computeEignung().
+function empfehlungHtml(eig, nGesamt) {
+  if (!eig.beantwortet.length) {
+    return '<div class="alert alert-info" style="margin-bottom:1.1rem">Noch keine Eignungs-Einschätzungen vorhanden – sobald Bewertungen eingehen, erscheint hier eine Empfehlung.</div>';
+  }
+  const topNamen = eig.top.map(i => esc(i.label)).join(' <strong>und</strong> ');
+  let empfHtml = `<strong>Empfehlung:</strong> Das Ensemble sieht diesen Dirigenten am besten geeignet für <strong>${topNamen}</strong> (Ø ${fNum(eig.top[0].avg)} von 5, n=${eig.top[0].n}).`;
+  if (nGesamt < 3) {
+    empfHtml += `<div class="empf-hinweis">Datenbasis noch gering (insgesamt ${nGesamt} Bewertung${nGesamt===1?'':'en'}) – Empfehlung mit Vorsicht interpretieren.</div>`;
+  }
+  return `<div class="empf-box">${empfHtml}</div>`;
+}
+function renderEignung(d) {
+  const box = document.getElementById('detailEmpfehlung');
+  const fb = document.getElementById('detailFragenB');
+  const eig = computeEignung(d);
 
-  if (!beantwortet.length) {
-    box.innerHTML = '<div class="alert alert-info" style="margin-bottom:1.1rem">Noch keine Eignungs-Einschätzungen vorhanden – sobald Bewertungen eingehen, erscheint hier eine Empfehlung.</div>';
+  box.innerHTML = empfehlungHtml(eig, d.anzahl_bewertungen);
+
+  if (!eig.beantwortet.length) {
     fb.innerHTML = FRAGEN_B.map(([, label]) => `
       <div class="eig-row">
         <div class="eig-label-row"><span class="eig-name">${esc(label)}</span><span class="eig-val">– (n=0)</span></div>
@@ -691,25 +742,13 @@ function renderEignung(d) {
     return;
   }
 
-  const sortiert = beantwortet.slice().sort((a, b) => b.pct - a.pct);
-  const topPct = sortiert[0].pct;
-  const top = sortiert.filter(i => i.pct === topPct);
-  const nGesamt = d.anzahl_bewertungen;
-
-  const topNamen = top.map(i => esc(i.label)).join(' <strong>und</strong> ');
-  let empfHtml = `<strong>Empfehlung:</strong> Das Ensemble sieht diesen Dirigenten am besten geeignet für <strong>${topNamen}</strong> (Ø ${fNum(top[0].avg)} von 5, n=${top[0].n}).`;
-  if (nGesamt < 3) {
-    empfHtml += `<div class="empf-hinweis">Datenbasis noch gering (insgesamt ${nGesamt} Bewertung${nGesamt===1?'':'en'}) – Empfehlung mit Vorsicht interpretieren.</div>`;
-  }
-  box.innerHTML = `<div class="empf-box">${empfHtml}</div>`;
-
-  fb.innerHTML = sortiert.map(i => `
+  fb.innerHTML = eig.sortiert.map(i => `
     <div class="eig-row">
       <div class="eig-label-row">
         <span class="eig-name">${esc(i.label)}</span>
         <span class="eig-val">Ø ${fNum(i.avg)} (n=${i.n})</span>
       </div>
-      <div class="eig-track"><div class="eig-fill ${i.pct === topPct ? 'top' : 'rest'}" style="width:${i.pct}%"></div></div>
+      <div class="eig-track"><div class="eig-fill ${i.pct === eig.topPct ? 'top' : 'rest'}" style="width:${i.pct}%"></div></div>
     </div>`).join('');
 }
 
@@ -749,9 +788,9 @@ function dlFile(content, name, mime) {
 function csvBom() { return '﻿'; }
 function csvRanking() {
   if (!alleDirigenten.length) { alert('Keine Daten vorhanden.'); return; }
-  const header = ['Dirigent', 'Ø Kernfragen', 'Gesamteindruck', 'Ø Wieder einladen', 'Ja', 'Meinetwegen', 'Nein', 'Anzahl Bewertungen'];
+  const header = ['Dirigent', 'Ø Kernfragen', 'Gesamteindruck', 'Wieder einladen', 'Ja', 'Meinetwegen', 'Nein', 'Anzahl Bewertungen'];
   const rows = alleDirigenten.map(d => [d.name, fNum(d.avg_bewertung_gesamt),
-    gesamtAdjektiv(d.avg_gesamtnote), fNum(d.avg_wieder_arbeiten), d.n_ja, d.n_vielleicht, d.n_nein, d.anzahl_bewertungen]
+    gesamtAdjektiv(d.avg_gesamtnote), wiederAmpel(d.avg_wieder_arbeiten).label, d.n_ja, d.n_vielleicht, d.n_nein, d.anzahl_bewertungen]
     .map(v => `"${String(v).replace(/"/g,'""')}"`).join(';'));
   dlFile(csvBom() + header.join(';') + '\r\n' + rows.join('\r\n'), 'Dirigenten_Ranking.csv', 'text/csv');
 }
@@ -767,6 +806,131 @@ function csvDetail() {
   rows.push(['Würde wieder einladen: Meinetwegen', d.wieder_arbeiten.vielleicht, ''].map(v=>`"${v}"`).join(';'));
   rows.push(['Würde wieder einladen: Nein', d.wieder_arbeiten.nein, ''].map(v=>`"${v}"`).join(';'));
   dlFile(csvBom() + rows.join('\r\n'), 'Dirigent_' + d.name.replace(/\s+/g,'_') + '.csv', 'text/csv');
+}
+async function dirigentLoeschen() {
+  if (!currentDirigent) return;
+  const name = currentDirigent.name;
+  if (!confirm('Dirigent "' + name + '" wirklich unwiderruflich löschen? Alle Bewertungsrunden und Bewertungen zu diesem Dirigenten werden dabei ebenfalls und vollständig gelöscht. Das kann NICHT rückgängig gemacht werden.')) return;
+  const { error } = await sb.from('dirigenten').delete().eq('id', currentDirigent.id);
+  if (error) { alert('Fehler beim Löschen: ' + error.message); return; }
+  currentDirigent = null;
+  currentDetail = null;
+  currentKommentare = [];
+  showScreen('s-admin-home');
+  await ladeRanking();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// ADMIN – GESAMTPROTOKOLL (alle Dirigenten, druck-/PDF-optimiert)
+// ════════════════════════════════════════════════════════════════════════
+function protokollFrageTabelle(fragenListe, fragenObj) {
+  return `<table><thead><tr><th>Frage</th><th class="center">Ø</th><th class="center">n</th></tr></thead><tbody>
+    ${fragenListe.map(([key, label]) => {
+      const f = fragenObj[key] || { avg: null, n: 0 };
+      return `<tr><td>${esc(label)}</td><td class="center">${fNum(f.avg)}</td><td class="center">${f.n}</td></tr>`;
+    }).join('')}
+  </tbody></table>`;
+}
+function protokollDirigent(eintrag) {
+  const d = eintrag.detail;
+  const wa = d.wieder_arbeiten, gb = d.gesamtbewertung, total = d.anzahl_bewertungen;
+  const eig = computeEignung(d);
+
+  const rundenHtml = !d.runden.length
+    ? '<p style="font-size:0.85rem;color:var(--muted)">Noch keine Bewertungsrunde angelegt.</p>'
+    : `<table><thead><tr><th>Werk / Programm</th><th>Arbeitsperiode</th><th class="center">Status</th><th class="center">n</th></tr></thead><tbody>
+        ${d.runden.map(r => `<tr>
+          <td>${esc(r.werk || '(ohne Werk-Angabe)')}</td>
+          <td>${esc(r.arbeitsperiode || '')}</td>
+          <td class="center"><span class="badge badge-${r.status}">${r.status}</span></td>
+          <td class="center">${r.anzahl_bewertungen}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+
+  const bemerkungenHtml = !eintrag.kommentare.length
+    ? '<p style="font-size:0.85rem;color:var(--muted)">Noch keine Bemerkungen vorhanden.</p>'
+    : eintrag.kommentare.map(k => `<p style="margin-bottom:0.7rem;line-height:1.5">${esc(k)}</p>`).join('');
+
+  return `
+    <div class="card protokoll-dirigent">
+      <div class="card-title">${esc(d.name)}</div>
+      <p class="protokoll-meta">${total} Bewertung${total===1?'':'en'} insgesamt &middot; Gesamteindruck: ${gesamtAdjektiv(eintrag.ranking.avg_gesamtnote)} &middot; Wieder einladen: ${wiederBadge(eintrag.ranking.avg_wieder_arbeiten)}</p>
+
+      <div class="protokoll-sub">Bewertungsrunden</div>
+      ${rundenHtml}
+
+      <div class="protokoll-sub">Ich würde ${esc(d.name)} wieder einladen.</div>
+      <table><tbody>
+        <tr><td>${WIEDER_LABEL.ja}</td><td class="center">${wa.ja}</td></tr>
+        <tr><td>${WIEDER_LABEL.vielleicht}</td><td class="center">${wa.vielleicht}</td></tr>
+        <tr><td>${WIEDER_LABEL.nein}</td><td class="center">${wa.nein}</td></tr>
+      </tbody></table>
+
+      <div class="protokoll-sub">Zusammenfassende Bewertung</div>
+      <table><tbody>
+        <tr><td>${GESAMT_LABEL.sehr_gut}</td><td class="center">${gb.sehr_gut}</td></tr>
+        <tr><td>${GESAMT_LABEL.gut}</td><td class="center">${gb.gut}</td></tr>
+        <tr><td>${GESAMT_LABEL.in_ordnung}</td><td class="center">${gb.in_ordnung}</td></tr>
+        <tr><td>${GESAMT_LABEL.schlecht}</td><td class="center">${gb.schlecht}</td></tr>
+        <tr><td>${GESAMT_LABEL.inakzeptabel}</td><td class="center">${gb.inakzeptabel}</td></tr>
+      </tbody></table>
+
+      <div class="protokoll-sub">a) Bewertungen – Durchschnitte</div>
+      ${protokollFrageTabelle(FRAGEN_A, d.fragen)}
+
+      <div class="protokoll-sub">b) Eignung – wofür einsetzen?</div>
+      ${empfehlungHtml(eig, total)}
+      ${protokollFrageTabelle(FRAGEN_B, d.fragen)}
+
+      <div class="protokoll-sub">c) Bemerkungen</div>
+      ${bemerkungenHtml}
+    </div>`;
+}
+async function ladeGesamtprotokoll() {
+  showScreen('s-admin-protokoll');
+  document.getElementById('protokollInhalt').innerHTML = '<div class="card"><p style="color:var(--muted)">Protokoll wird geladen …</p></div>';
+
+  const { data: ranking, error } = await sb.rpc('d_ranking');
+  if (error) { alert('Fehler: ' + error.message); return; }
+  const liste = (ranking || []).slice().sort((a, b) => a.name.localeCompare(b.name, 'de'));
+
+  if (!liste.length) {
+    document.getElementById('protokollInhalt').innerHTML = '<div class="card"><p style="color:var(--muted)">Noch keine Dirigenten angelegt.</p></div>';
+    return;
+  }
+
+  const eintraege = await Promise.all(liste.map(async r => {
+    const [{ data: detail, error: e1 }, { data: kommentare, error: e2 }] = await Promise.all([
+      sb.rpc('d_detail', { p_dirigent_id: r.dirigent_id }),
+      sb.rpc('d_kommentare', { p_dirigent_id: r.dirigent_id })
+    ]);
+    if (e1) { console.error(e1); }
+    return { ranking: r, detail, kommentare: e2 ? [] : (kommentare || []) };
+  }));
+
+  const heute = new Date().toLocaleDateString('de-DE', { year: 'numeric', month: 'long', day: 'numeric' });
+  const kopf = `
+    <div class="card">
+      <div class="card-title">Gesamtprotokoll Dirigentenbewertung</div>
+      <p class="protokoll-meta">RIAS Kammerchor Berlin &middot; Stand: ${heute}</p>
+      <table>
+        <thead><tr>
+          <th>Dirigent</th><th class="center">Ø Kernfragen</th>
+          <th class="center">Gesamteindruck</th><th class="center">Wieder einladen?</th><th class="center">n</th>
+        </tr></thead>
+        <tbody>
+          ${eintraege.map(e => `<tr>
+            <td><strong>${esc(e.ranking.name)}</strong></td>
+            <td class="center">${fNum(e.ranking.avg_bewertung_gesamt)}</td>
+            <td class="center">${gesamtAdjektiv(e.ranking.avg_gesamtnote)}</td>
+            <td class="center">${wiederBadge(e.ranking.avg_wieder_arbeiten)}</td>
+            <td class="center">${e.ranking.anzahl_bewertungen}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  document.getElementById('protokollInhalt').innerHTML = kopf + eintraege.map(protokollDirigent).join('');
 }
 
 // ════════════════════════════════════════════════════════════════════════
