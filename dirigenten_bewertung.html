@@ -172,6 +172,7 @@
       .likert-btn { padding: 0.5rem 0.1rem; font-size: 0.8rem; }
       .btn-row { flex-wrap: wrap; }
       .btn-row .btn, .btn-row .right .btn { width: 100%; }
+      .btn-row .right .btn-sm { width: auto; margin-left: auto !important; margin-right: auto; display: block; }
       input[type="text"], input[type="password"], select { font-size: 1rem; padding: 0.75rem; }
     }
 
@@ -330,9 +331,11 @@
 
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="showScreen('s-admin-home');ladeRanking()">← Zum Ranking</button>
-      <button class="btn btn-outline" onclick="csvDetail()">📥 CSV (dieser Dirigent)</button>
-      <button class="btn btn-outline" onclick="window.print()">🖨️ Drucken / als PDF</button>
-      <button class="btn btn-danger" onclick="dirigentLoeschen()" style="margin-left:auto">🗑 Dirigent löschen</button>
+      <div class="right">
+        <button class="btn btn-outline" onclick="csvDetail()">📥 CSV (dieser Dirigent)</button>
+        <button class="btn btn-outline" onclick="window.print()">🖨️ Drucken / als PDF</button>
+        <button class="btn btn-danger btn-sm" onclick="dirigentLoeschen()" title="Dirigent löschen" aria-label="Dirigent löschen" style="margin-left:0.6rem">✕</button>
+      </div>
     </div>
   </div>
 
