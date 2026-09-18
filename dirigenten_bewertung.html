@@ -86,6 +86,7 @@
     .badge-ampel-ja { background: var(--ja-bg); color: var(--ja); }
     .badge-ampel-notfalls { background: #fff8e6; color: #7c5800; }
     .badge-ampel-nein { background: var(--nein-bg); color: var(--nein); }
+    .ranking-eignung-hint { font-size: 0.72rem; color: var(--muted); margin-top: 0.3rem; line-height: 1.3; }
 
     .alert { padding: 0.7rem 1rem; border-radius: 4px; font-size: 0.88rem; margin-bottom: 1rem; line-height: 1.5; }
     .alert-info  { background: #ededee; color: #3a3d45; border-left: 3px solid var(--blue); }
@@ -580,8 +581,25 @@ function adminNachLogin() {
 async function ladeRanking() {
   const { data, error } = await sb.rpc('d_ranking');
   if (error) { alert('Fehler beim Laden: ' + error.message); return; }
-  alleDirigenten = data || [];
+  const liste = data || [];
+  // Bei "Ja"/"Notfalls" zusätzlich die Top-2-Eignungsaussagen aus b) nachladen,
+  // damit sie unter dem Ampel-Ergebnis angezeigt werden können. Bei "Nein" erübrigt sich das.
+  await Promise.all(liste.map(async d => {
+    const ampel = wiederAmpel(d.avg_wieder_arbeiten);
+    if (ampel.cls !== 'ampel-ja' && ampel.cls !== 'ampel-notfalls') { d.eignungTop2 = []; return; }
+    const { data: detail, error: e2 } = await sb.rpc('d_detail', { p_dirigent_id: d.dirigent_id });
+    if (e2 || !detail) { d.eignungTop2 = []; return; }
+    d.eignungTop2 = computeEignung(detail).sortiert.slice(0, 2).map(i => i.label);
+  }));
+  alleDirigenten = liste;
   renderRanking();
+}
+function eignungHinweisZeile(d) {
+  const ampel = wiederAmpel(d.avg_wieder_arbeiten);
+  if (ampel.cls !== 'ampel-ja' && ampel.cls !== 'ampel-notfalls') return '';
+  const top = d.eignungTop2 || [];
+  if (!top.length) return '';
+  return `<div class="ranking-eignung-hint">${top.map(esc).join('<br>')}</div>`;
 }
 function renderRanking() {
   const body = document.getElementById('rankingBody');
@@ -600,7 +618,7 @@ function renderRanking() {
       <td><strong>${esc(d.name)}</strong></td>
       <td class="center">${fNum(d.avg_bewertung_gesamt)}</td>
       <td class="center">${gesamtAdjektiv(d.avg_gesamtnote)}</td>
-      <td class="center">${wiederBadge(d.avg_wieder_arbeiten)}</td>
+      <td class="center">${wiederBadge(d.avg_wieder_arbeiten)}${eignungHinweisZeile(d)}</td>
       <td class="center">${d.anzahl_bewertungen}</td>
     </tr>`).join('');
 }
