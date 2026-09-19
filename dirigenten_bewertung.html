@@ -665,10 +665,15 @@ async function openDirigentDetail(id) {
   const rundeIds = (data.runden || []).map(r => r.runde_id);
   currentSgDaten = [];
   if (rundeIds.length) {
-    const { data: sgRaw } = await sb.from('d_bewertungen')
+    const { data: sgRaw, error: sgErr } = await sb.from('d_bewertungen')
       .select('stimmgruppe, wieder_arbeiten, gesamtbewertung')
       .in('runde_id', rundeIds);
+    console.log('SG-Query rundeIds:', rundeIds);
+    console.log('SG-Query Ergebnis:', sgRaw, 'Fehler:', sgErr);
     currentSgDaten = sgRaw || [];
+    console.log('currentSgDaten Länge:', currentSgDaten.length);
+  } else {
+    console.log('Keine rundeIds gefunden – runden:', data.runden);
   }
 
   renderDirigentDetail();
