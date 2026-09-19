@@ -143,6 +143,17 @@
     .chart-label { display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 0.25rem; }
     .chart-bar-bg { background: #e8e6e1; border-radius: 4px; height: 22px; overflow: hidden; }
     .chart-bar { height: 100%; border-radius: 4px; background: var(--blue); transition: width 0.5s ease; }
+    /* Stimmgruppen-Aufschlüsselung */
+    .sg-bars { display: flex; flex-direction: column; gap: 0; border-radius: 4px; overflow: hidden; height: 22px; }
+    .sg-bar-row { display: flex; flex: 1; position: relative; }
+    .sg-bar-fill { height: 100%; transition: width 0.5s ease; }
+    .sg-bar-bg  { flex: 1; background: #e8e6e1; }
+    .sg-S { background: #2563a8; }
+    .sg-A { background: #1a6b3a; }
+    .sg-T { background: #8b6914; }
+    .sg-B { background: #8b1a1a; }
+    .sg-legend { display: flex; gap: 10px; font-size: 0.72rem; color: var(--muted); margin-top: 0.2rem; flex-wrap: wrap; }
+    .sg-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
 
     .empf-box { background: #f7efe0; border-left: 3px solid var(--gold); border-radius: 0 4px 4px 0; padding: 0.85rem 1rem; margin-bottom: 1.1rem; font-size: 0.9rem; line-height: 1.6; color: #5a4415; }
     .empf-box strong { color: var(--gold); }
@@ -517,6 +528,7 @@ function wiederBadge(avg) {
 let alleDirigenten   = [];   // zuletzt geladenes Ranking
 let currentDirigent  = null; // {dirigent_id, name, ...} im Admin-Detail
 let currentDetail    = null; // Ergebnis von d_detail()
+let currentSgDaten   = [];   // Rohdaten für Stimmgruppen-Aufschlüsselung
 let currentKommentare = [];  // Freitext-Bemerkungen des aktuellen Dirigenten (d_kommentare)
 let alleMitglieder   = [];
 let currentMitglied  = null;
@@ -648,6 +660,17 @@ async function openDirigentDetail(id) {
   currentDetail = data;
   currentKommentare = e2 ? [] : (kommentare || []);
   currentDirigent = { id, name: data.name };
+
+  // Rohdaten für Stimmgruppen-Aufschlüsselung laden
+  const rundeIds = (data.runden || []).map(r => r.runde_id);
+  currentSgDaten = [];
+  if (rundeIds.length) {
+    const { data: sgRaw } = await sb.from('d_bewertungen')
+      .select('stimmgruppe, wieder_arbeiten, gesamtbewertung')
+      .in('runde_id', rundeIds);
+    currentSgDaten = sgRaw || [];
+  }
+
   renderDirigentDetail();
   showScreen('s-admin-detail');
 }
@@ -658,6 +681,59 @@ function chartRow(label, n, total) {
     <div class="chart-bar-bg"><div class="chart-bar" style="width:${pct}%"></div></div>
   </div>`;
 }
+
+// Stimmgruppen-Hilfsfunktionen
+const SG_ORDER = ['Sopran','Alt','Tenor','Bass'];
+const SG_KEY   = {'Sopran':'S','Alt':'A','Tenor':'T','Bass':'B'};
+
+function sgBreakdown(field, value) {
+  const out = {Sopran:0, Alt:0, Tenor:0, Bass:0, total:0};
+  currentSgDaten.forEach(row => {
+    if (row[field] === value) {
+      const sg = row.stimmgruppe;
+      if (out[sg] !== undefined) out[sg]++;
+      out.total++;
+    }
+  });
+  return out;
+}
+
+function sgTotals() {
+  const out = {Sopran:0, Alt:0, Tenor:0, Bass:0};
+  currentSgDaten.forEach(row => {
+    if (out[row.stimmgruppe] !== undefined) out[row.stimmgruppe]++;
+  });
+  return out;
+}
+
+function sgChartRow(label, field, value) {
+  const totals = sgTotals();
+  const counts = sgBreakdown(field, value);
+  const globalTotal = currentSgDaten.length;
+  const globalN = counts.total;
+  const globalPct = globalTotal > 0 ? Math.round(globalN / globalTotal * 100) : 0;
+
+  const bars = SG_ORDER.map(sg => {
+    const n   = counts[sg];
+    const t   = totals[sg];
+    const pct = t > 0 ? Math.round(n / t * 100) : 0;
+    const k   = SG_KEY[sg];
+    const tip = `${sg}: ${n}/${t} (${pct} %)`;
+    return `<div class="sg-bar-row" title="${tip}">
+      <div class="sg-bar-fill sg-${k}" style="width:${pct}%"></div>
+      <div class="sg-bar-bg"></div>
+    </div>`;
+  }).join('');
+
+  return `<div class="chart-row">
+    <div class="chart-label">
+      <span>${esc(label)}</span>
+      <span>${globalN} (${globalPct} %)</span>
+    </div>
+    <div class="sg-bars">${bars}</div>
+  </div>`;
+}
+
 function renderDirigentDetail() {
   const d = currentDetail;
   document.getElementById('detailTitel').textContent = d.name;
@@ -667,15 +743,17 @@ function renderDirigentDetail() {
     <div class="card-title" style="margin-top:0">Auswertung</div>
     <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem">${total} Bewertung${total===1?'':'en'} insgesamt</p>
     <div class="section-label" style="margin-top:0">Ich würde ${esc(d.name)} wieder einladen.</div>
-    ${chartRow(WIEDER_LABEL.ja, wa.ja, total)}
-    ${chartRow(WIEDER_LABEL.vielleicht, wa.vielleicht, total)}
-    ${chartRow(WIEDER_LABEL.nein, wa.nein, total)}
+    ${currentSgDaten.length ? sgChartRow(WIEDER_LABEL.ja, 'wieder_arbeiten', 'ja') : chartRow(WIEDER_LABEL.ja, wa.ja, total)}
+    ${currentSgDaten.length ? sgChartRow(WIEDER_LABEL.vielleicht, 'wieder_arbeiten', 'vielleicht') : chartRow(WIEDER_LABEL.vielleicht, wa.vielleicht, total)}
+    ${currentSgDaten.length ? sgChartRow(WIEDER_LABEL.nein, 'wieder_arbeiten', 'nein') : chartRow(WIEDER_LABEL.nein, wa.nein, total)}
+    ${currentSgDaten.length ? '<div class="sg-legend"><span><span class="sg-dot" style="background:#2563a8"></span>Sopran</span><span><span class="sg-dot" style="background:#1a6b3a"></span>Alt</span><span><span class="sg-dot" style="background:#8b6914"></span>Tenor</span><span><span class="sg-dot" style="background:#8b1a1a"></span>Bass</span><span style="color:var(--muted);font-style:italic">% innerhalb der Stimmgruppe · Tooltip für Details</span></div>' : ''}
     <div class="section-label">Zusammenfassende Bewertung</div>
-    ${chartRow(GESAMT_LABEL.sehr_gut, gb.sehr_gut, total)}
-    ${chartRow(GESAMT_LABEL.gut, gb.gut, total)}
-    ${chartRow(GESAMT_LABEL.in_ordnung, gb.in_ordnung, total)}
-    ${chartRow(GESAMT_LABEL.schlecht, gb.schlecht, total)}
-    ${chartRow(GESAMT_LABEL.inakzeptabel, gb.inakzeptabel, total)}
+    ${currentSgDaten.length ? sgChartRow(GESAMT_LABEL.sehr_gut, 'gesamtbewertung', 'sehr_gut') : chartRow(GESAMT_LABEL.sehr_gut, gb.sehr_gut, total)}
+    ${currentSgDaten.length ? sgChartRow(GESAMT_LABEL.gut, 'gesamtbewertung', 'gut') : chartRow(GESAMT_LABEL.gut, gb.gut, total)}
+    ${currentSgDaten.length ? sgChartRow(GESAMT_LABEL.in_ordnung, 'gesamtbewertung', 'in_ordnung') : chartRow(GESAMT_LABEL.in_ordnung, gb.in_ordnung, total)}
+    ${currentSgDaten.length ? sgChartRow(GESAMT_LABEL.schlecht, 'gesamtbewertung', 'schlecht') : chartRow(GESAMT_LABEL.schlecht, gb.schlecht, total)}
+    ${currentSgDaten.length ? sgChartRow(GESAMT_LABEL.inakzeptabel, 'gesamtbewertung', 'inakzeptabel') : chartRow(GESAMT_LABEL.inakzeptabel, gb.inakzeptabel, total)}
+    ${currentSgDaten.length ? '<div class="sg-legend" style="margin-top:0.3rem"><span><span class="sg-dot" style="background:#2563a8"></span>Sopran</span><span><span class="sg-dot" style="background:#1a6b3a"></span>Alt</span><span><span class="sg-dot" style="background:#8b6914"></span>Tenor</span><span><span class="sg-dot" style="background:#8b1a1a"></span>Bass</span></div>' : ''}
   `;
 
   const rl = document.getElementById('rundenListe');
