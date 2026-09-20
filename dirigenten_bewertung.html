@@ -1184,6 +1184,8 @@ function likertWaehlen(key, val, el) {
   el.classList.add('selected');
 }
 
+let _isSubmitting = false;
+
 async function bewertungAbsenden() {
   const fehlerEl = document.getElementById('formFehler');
   fehlerEl.style.display = 'none';
@@ -1193,7 +1195,24 @@ async function bewertungAbsenden() {
     window.scrollTo(0, 0);
     return;
   }
+  if (_isSubmitting) return;
   if (!confirm('Bewertung jetzt absenden? Das kann danach nicht mehr geändert werden.')) return;
+
+  // Sofort sperren gegen Doppeltippen
+  _isSubmitting = true;
+  const btnAbsenden = document.querySelector('#s-member-form .btn-primary');
+  if (btnAbsenden) { btnAbsenden.disabled = true; btnAbsenden.textContent = '⏳ Wird gespeichert…'; }
+
+  // Race-Condition-Schutz: nochmals prüfen ob bereits bewertet
+  const { data: check } = await sb
+    .from('d_hat_bewertet').select('id')
+    .eq('runde_id', currentRunde.id)
+    .eq('mitglied_id', currentMitglied.id)
+    .limit(1);
+  if (check?.length) {
+    showScreen('s-member-danke');
+    return;
+  }
 
   const payload = {
     runde_id: currentRunde.id,
@@ -1205,10 +1224,20 @@ async function bewertungAbsenden() {
   FRAGEN_A.concat(FRAGEN_B).forEach(([key]) => { payload[key] = antworten[key] || null; });
 
   const { error: e1 } = await sb.from('d_bewertungen').insert(payload);
-  if (e1) { fehlerEl.textContent = 'Fehler beim Speichern: ' + e1.message; fehlerEl.style.display = 'block'; return; }
+  if (e1) {
+    _isSubmitting = false;
+    if (btnAbsenden) { btnAbsenden.disabled = false; btnAbsenden.textContent = 'Bewertung absenden ✓'; }
+    fehlerEl.textContent = 'Fehler beim Speichern: ' + e1.message;
+    fehlerEl.style.display = 'block';
+    return;
+  }
 
   const { error: e2 } = await sb.from('d_hat_bewertet').insert({ runde_id: currentRunde.id, mitglied_id: currentMitglied.id });
-  if (e2) { fehlerEl.textContent = 'Deine Bewertung wurde gespeichert, aber der Teilnahme-Status konnte nicht aktualisiert werden: ' + e2.message; fehlerEl.style.display = 'block'; return; }
+  if (e2) {
+    fehlerEl.textContent = 'Deine Bewertung wurde gespeichert, aber der Teilnahme-Status konnte nicht aktualisiert werden: ' + e2.message;
+    fehlerEl.style.display = 'block';
+    return;
+  }
 
   showScreen('s-member-danke');
 }
