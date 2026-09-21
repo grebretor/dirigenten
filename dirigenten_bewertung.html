@@ -1084,9 +1084,14 @@ function goRankingPublic() {
 async function zeigRankingPublic() {
   await ladeRanking();
   showScreen('s-admin-home');
-  // Zurück-Button auf Startseite zeigen statt Admin-Home
+  // Nur Startseite-Button zeigen, Admin-Buttons ausblenden
+  document.querySelector('#s-admin-home .right').style.display = 'none';
   document.querySelector('#s-admin-home .btn-row .btn-ghost').onclick =
-    () => { resetAll(); showScreen('s-start'); };
+    () => {
+      document.querySelector('#s-admin-home .right').style.display = '';
+      resetAll();
+      showScreen('s-start');
+    };
 }
 
 async function goMemberStart() {
