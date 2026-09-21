@@ -18,7 +18,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dirigenten-Bewertung – RIAS Kammerchor Berlin</title>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+// ── iOS-kompatibler Druckdialog ───────────────────────────────────────
+function istIOS() {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+function drucken(titel) {
+  if (istIOS() && navigator.share) {
+    navigator.share({ title: titel || document.title, url: window.location.href });
+  } else {
+    window.print();
+  }
+}
+
+</script>
   <style>
     :root {
       --ink:    #1b1f24;
@@ -302,7 +316,7 @@
     <div id="protokollInhalt"></div>
     <div class="btn-row no-print">
       <button class="btn btn-ghost" onclick="showScreen('s-admin-home')">← Zurück</button>
-      <button class="btn btn-primary" onclick="window.print()">🖨️ Drucken / als PDF</button>
+      <button class="btn btn-primary" onclick="drucken('Dirigentenbewertung – RIAS Kammerchor')">🖨️ Drucken / als PDF</button>
     </div>
   </div>
 
@@ -367,7 +381,7 @@
       <button class="btn btn-ghost" onclick="showScreen('s-admin-home');ladeRanking()">← Zum Ranking</button>
       <div class="right">
         <button class="btn btn-outline" onclick="csvDetail()">📥 CSV (dieser Dirigent)</button>
-        <button class="btn btn-outline" onclick="window.print()">🖨️ Drucken / als PDF</button>
+        <button class="btn btn-outline" onclick="drucken('Dirigentenbewertung – RIAS Kammerchor')">🖨️ Drucken / als PDF</button>
         <button class="btn btn-danger btn-sm" onclick="dirigentLoeschen()" title="Dirigent löschen" aria-label="Dirigent löschen" style="margin-left:0.6rem">✕</button>
       </div>
     </div>
